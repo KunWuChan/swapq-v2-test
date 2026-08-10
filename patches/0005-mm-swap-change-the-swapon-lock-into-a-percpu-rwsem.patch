@@ -1,0 +1,422 @@
+From 893fb7195cbe964162c7cb9efef72105afac041a Mon Sep 17 00:00:00 2001
+From: Kairui Song <kasong@tencent.com>
+Date: Tue, 14 Jul 2026 01:25:43 +0800
+Subject: [RFC PATCH v2 05/13] mm/swap: change the swapon lock into a percpu
+ rwsem
+
+Reading swap metadata is a common hot path, while swapon and swapoff
+are costly and very rare.  Convert the existing swap_lock spinlock
+into a percpu rwsem so that readers can run concurrently without
+contention.  This is a first step toward cleaning up the swap lock
+model and we might already see a performance gain for existing
+readers.
+
+Also update the comments in swap_info_struct to reflect the lock
+name change.
+
+Signed-off-by: Kairui Song <kasong@tencent.com>
+Signed-off-by: Lian Wang (Processmission) <lianux.mm@gmail.com>
+---
+ include/linux/swap.h |  10 ++--
+ mm/swapfile.c        | 115 +++++++++++++++++++++++--------------------
+ 2 files changed, 66 insertions(+), 59 deletions(-)
+
+diff --git a/include/linux/swap.h b/include/linux/swap.h
+index 5e1109010c89..13f732bd40bf 100644
+--- a/include/linux/swap.h
++++ b/include/linux/swap.h
+@@ -197,17 +197,17 @@ struct swap_extent {
+ /*
+  * Swap device flags, except the ones documented below, all are immutable
+  * after exposed by swap_device_enable, and until the device is freed again
+- * (SWP_USED unset). The exceptions:
+- * - SWP_USED: Protected by swap_lock. Indicates the device is inuse. Once
++ * (SWP_USED unset). The exceptions are all protected by swapon_rwsem:
++ * - SWP_USED: Protected by swapon_rwsem. Indicates the device is inuse. Once
+  *   set, won't be cleared unless all reference to this device is freed and
+  *   swapoff finished.
+- * - SWP_WRITEOK: Protected by both swap_lock and swap_avail_lock, clearing
++ * - SWP_WRITEOK: Protected by both swapon_rwsem and swap_avail_lock, clearing
+  *   this flag also waits for all current cluster lock users to exit so
+  *   checking this flag while holding any of these locks ensures the device
+  *   is safe to use at the moment. Note: clearing this flag doesn't affect
+  *   pending IO or async requests, it only prevents further entry allocation
+  *   or new async request (e.g. discard) from initiating.
+- * - SWP_HIBERNATION: Protected by swap_lock. Indicates if the device
++ * - SWP_HIBERNATION: Protected by swapon_rwsem. Indicates if the device
+  *   is pinned for hibernation.
+  */
+ enum {
+@@ -280,7 +280,7 @@ struct swap_info_struct {
+ 	spinlock_t lock;		/*
+ 					 * Protect cluster lists. Other fields
+ 					 * are only changed at swapon/swapoff,
+-					 * so are protected by swap_lock.
++					 * so are protected by swapon_rwsem.
+ 					 */
+ 	struct work_struct discard_work; /* discard worker */
+ 	struct work_struct reclaim_work; /* reclaim worker */
+diff --git a/mm/swapfile.c b/mm/swapfile.c
+index 327ab1e5803d..37bcce77b2cd 100644
+--- a/mm/swapfile.c
++++ b/mm/swapfile.c
+@@ -57,23 +57,29 @@ static void move_cluster(struct swap_info_struct *si,
+ 			 enum swap_cluster_flags new_flags);
+ 
+ /*
+- * Protects the swap_info array, and the SWP_USED flag. swap_info contains
+- * lazily allocated & freed swap device info struts, and SWP_USED indicates
+- * which device is used, ~SWP_USED devices and can be reused.
+- *
+- * Also protects swap_active_head total_swap_pages, and the SWP_WRITEOK flag.
++ * Serializes swapon/swapoff (writers) and protects the swap_info
++ * array, nr_swapfiles, total_swap_pages, and part of swap device
++ * info content (see comment of swap_info_struct).  Readers
++ * (allocation, /proc/swaps, etc.) take percpu_down_read() which
++ * is cheap as the hot path.
++ */
++DEFINE_STATIC_PERCPU_RWSEM(swapon_rwsem);
++/*
++ * swap_info contains lazily allocated swap device info structs, and
++ * SWP_USED indicates which device is used, ~SWP_USED devices can be
++ * reused. Protected by swapon_rwsem, but reading could be lockless.
+  */
+-static DEFINE_SPINLOCK(swap_lock);
++struct swap_info_struct *swap_info[MAX_SWAPFILES];
+ static unsigned int nr_swapfiles;
+-atomic_long_t nr_swap_pages;
++long total_swap_pages;
++
+ /*
+  * Some modules use swappable objects and may try to swap them out under
+  * memory pressure (via the shrinker). Before doing so, they may wish to
+  * check to see if any swap space is available.
+  */
++atomic_long_t nr_swap_pages;
+ EXPORT_SYMBOL_GPL(nr_swap_pages);
+-/* protected with swap_lock. reading in vm_swap_full() doesn't need lock */
+-long total_swap_pages;
+ #define DEF_SWAP_PRIO  -1
+ unsigned long swapfile_maximum_size;
+ #ifdef CONFIG_MIGRATION
+@@ -85,7 +91,7 @@ static const char Bad_offset[] = "Bad swap offset entry ";
+ 
+ /*
+  * all active swap_info_structs
+- * protected with swap_lock, and ordered by priority.
++ * protected with swapon_rwsem, and ordered by priority.
+  */
+ static PLIST_HEAD(swap_active_head);
+ 
+@@ -95,20 +101,18 @@ static PLIST_HEAD(swap_active_head);
+  * This is used by folio_alloc_swap() instead of swap_active_head
+  * because swap_active_head includes all swap_info_structs,
+  * but folio_alloc_swap() doesn't need to look at full ones.
+- * This uses its own lock instead of swap_lock because when a
++ * This uses its own lock instead of swapon_rwsem because when a
+  * swap_info_struct changes between not-full/full, it needs to
+  * add/remove itself to/from this list, but the swap_info_struct->lock
+- * is held and the locking order requires swap_lock to be taken
++ * is held and the locking order requires swapon_rwsem to be taken
+  * before any swap_info_struct->lock.
+  */
+ static PLIST_HEAD(swap_avail_head);
+ static DEFINE_SPINLOCK(swap_avail_lock);
+ 
+-struct swap_info_struct *swap_info[MAX_SWAPFILES];
+-
+ static inline struct swap_info_struct *__swap_iter(int *i, unsigned long flag)
+ {
+-	lockdep_assert_held(&swap_lock);
++	lockdep_assert_held(&swapon_rwsem);
+ 	while (*i < nr_swapfiles) {
+ 		struct swap_info_struct *si = __swap_type_to_info(*i);
+ 
+@@ -128,7 +132,7 @@ static inline struct swap_info_struct *__swap_iter(int *i, unsigned long flag)
+  * for_each_swap - iterate through all allocated and inuse swap devices
+  * @si: the iterator
+  *
+- * Context: The caller must hold swap_lock. The lock may be dropped during
++ * Context: The caller must hold swapon_rwsem. The lock may be dropped during
+  * the loop body but must be re-acquired before the next iteration.
+  */
+ #define for_each_swap(si) __for_each_swap(si, SWP_USED)
+@@ -1371,10 +1375,10 @@ static bool get_swap_device_info(struct swap_info_struct *si)
+ 	/*
+ 	 * Guarantee the si->users are checked before accessing other
+ 	 * fields of swap_info_struct, and si->flags (SWP_WRITEOK) is
+-	 * up to dated.
++	 * up to date.
+ 	 *
+-	 * Paired with the spin_unlock() after setup_swap_info() in
+-	 * swap_device_enable(), and smp_wmb() in swapoff.
++	 * Paired with percpu_up_write() in swap_device_enable(), and
++	 * smp_wmb() after clearing SWP_WRITEOK in swapoff.
+ 	 */
+ 	smp_rmb();
+ 	return true;
+@@ -1459,10 +1463,10 @@ static bool swap_sync_discard(void)
+ 	bool ret = false;
+ 	struct swap_info_struct *si, *next;
+ 
+-	spin_lock(&swap_lock);
++	percpu_down_read(&swapon_rwsem);
+ start_over:
+ 	plist_for_each_entry_safe(si, next, &swap_active_head, list) {
+-		spin_unlock(&swap_lock);
++		percpu_up_read(&swapon_rwsem);
+ 		if (get_swap_device_info(si)) {
+ 			if (si->flags & SWP_PAGE_DISCARD)
+ 				ret = swap_do_scheduled_discard(si);
+@@ -1471,11 +1475,11 @@ static bool swap_sync_discard(void)
+ 		if (ret)
+ 			return true;
+ 
+-		spin_lock(&swap_lock);
++		percpu_down_read(&swapon_rwsem);
+ 		if (plist_node_empty(&next->list))
+ 			goto start_over;
+ 	}
+-	spin_unlock(&swap_lock);
++	percpu_up_read(&swapon_rwsem);
+ 
+ 	return false;
+ }
+@@ -2268,7 +2272,7 @@ int pin_hibernation_swap_type(dev_t device, sector_t offset)
+ 	int ret;
+ 	struct swap_info_struct *si;
+ 
+-	spin_lock(&swap_lock);
++	percpu_down_write(&swapon_rwsem);
+ 	ret = __find_hibernation_swap_type(device, offset);
+ 	if (ret < 0)
+ 		goto out;
+@@ -2292,7 +2296,7 @@ int pin_hibernation_swap_type(dev_t device, sector_t offset)
+ 	si->flags |= SWP_HIBERNATION;
+ 
+ out:
+-	spin_unlock(&swap_lock);
++	percpu_up_write(&swapon_rwsem);
+ 	return ret;
+ }
+ 
+@@ -2310,11 +2314,11 @@ void unpin_hibernation_swap_type(int type)
+ {
+ 	struct swap_info_struct *si;
+ 
+-	spin_lock(&swap_lock);
++	percpu_down_write(&swapon_rwsem);
+ 	si = swap_type_to_info(type);
+ 	if (si)
+ 		si->flags &= ~SWP_HIBERNATION;
+-	spin_unlock(&swap_lock);
++	percpu_up_write(&swapon_rwsem);
+ }
+ 
+ /**
+@@ -2339,9 +2343,9 @@ int find_hibernation_swap_type(dev_t device, sector_t offset)
+ {
+ 	int type;
+ 
+-	spin_lock(&swap_lock);
++	percpu_down_read(&swapon_rwsem);
+ 	type = __find_hibernation_swap_type(device, offset);
+-	spin_unlock(&swap_lock);
++	percpu_up_read(&swapon_rwsem);
+ 
+ 	return type;
+ }
+@@ -2351,13 +2355,13 @@ int find_first_swap(dev_t *device)
+ 	int ret = -ENODEV;
+ 	struct swap_info_struct *si;
+ 
+-	spin_lock(&swap_lock);
++	percpu_down_read(&swapon_rwsem);
+ 	for_each_avail_swap(si) {
+ 		*device = si->bdev->bd_dev;
+ 		ret = si->type;
+ 		break;
+ 	}
+-	spin_unlock(&swap_lock);
++	percpu_up_read(&swapon_rwsem);
+ 	return ret;
+ }
+ 
+@@ -2386,7 +2390,7 @@ unsigned int count_swap_pages(int type, int free)
+ {
+ 	unsigned int n = 0;
+ 
+-	spin_lock(&swap_lock);
++	percpu_down_read(&swapon_rwsem);
+ 	if ((unsigned int)type < nr_swapfiles) {
+ 		struct swap_info_struct *sis = swap_info[type];
+ 
+@@ -2398,7 +2402,7 @@ unsigned int count_swap_pages(int type, int free)
+ 		}
+ 		spin_unlock(&sis->lock);
+ 	}
+-	spin_unlock(&swap_lock);
++	percpu_up_read(&swapon_rwsem);
+ 	return n;
+ }
+ #endif /* CONFIG_HIBERNATION */
+@@ -2710,10 +2714,10 @@ static unsigned int find_next_to_unuse(struct swap_info_struct *si,
+ 	unsigned long swp_tb;
+ 
+ 	/*
+-	 * No need for swap_lock here: we're just looking
++	 * No need for swapon_rwsem here: we're just looking
+ 	 * for whether an entry is in use, not modifying it; false
+ 	 * hits are okay, and sys_swapoff() has already prevented new
+-	 * allocations from this area (while holding swap_lock).
++	 * allocations from this area (while holding swapon_rwsem).
+ 	 */
+ 	for (i = prev + 1; i < si->max; i++) {
+ 		swp_tb = swap_table_get(__swap_offset_to_cluster(si, i),
+@@ -2834,8 +2838,8 @@ static int try_to_unuse(unsigned int type)
+ 
+ /*
+  * After a successful try_to_unuse, if no swap is now in use, we know
+- * we can empty the mmlist.  swap_lock must be held on entry and exit.
+- * Note that mmlist_lock nests inside swap_lock, and an mm must be
++ * we can empty the mmlist. swapon_rwsem must be held on entry and exit.
++ * Note that mmlist_lock nests inside swapon_rwsem, and an mm must be
+  * added to the mmlist just after page_duplicate - before would be racy.
+  */
+ static void drain_mmlist(void)
+@@ -2987,8 +2991,7 @@ static int setup_swap_extents(struct swap_info_struct *sis,
+  */
+ static void swap_device_enable(struct swap_info_struct *si)
+ {
+-	spin_lock(&swap_lock);
+-
++	percpu_down_write(&swapon_rwsem);
+ 	spin_lock(&swap_avail_lock);
+ 	si->flags |= SWP_WRITEOK;
+ 	spin_unlock(&swap_avail_lock);
+@@ -2996,7 +2999,7 @@ static void swap_device_enable(struct swap_info_struct *si)
+ 	atomic_long_add(si->pages, &nr_swap_pages);
+ 	total_swap_pages += si->pages;
+ 	plist_add(&si->list, &swap_active_head);
+-	spin_unlock(&swap_lock);
++	percpu_up_write(&swapon_rwsem);
+ 
+ 	add_to_avail_list(si);
+ }
+@@ -3009,7 +3012,7 @@ static int swap_device_disable(struct address_space *mapping,
+ 	unsigned long offset, end;
+ 	int err = -EINVAL;
+ 
+-	spin_lock(&swap_lock);
++	percpu_down_write(&swapon_rwsem);
+ 	plist_for_each_entry(si, &swap_active_head, list) {
+ 		if ((si->flags & SWP_WRITEOK) &&
+ 		    si->swap_file->f_mapping == mapping) {
+@@ -3044,14 +3047,14 @@ static int swap_device_disable(struct address_space *mapping,
+ 
+ 	end = ALIGN(si->max, SWAPFILE_CLUSTER);
+ unlock:
+-	spin_unlock(&swap_lock);
++	percpu_up_write(&swapon_rwsem);
+ 	if (err)
+ 		return err;
+ 
+ 	del_from_avail_list(si, true);
+ 
+ 	/*
+-	 * The swap allocator doesn't take swap_lock. Looping through every
++	 * The swap allocator doesn't take swapon_rwsem. Looping through every
+ 	 * cluster lock after clearing SWP_WRITEOK ensures that allocators see
+ 	 * the updated flag and that no allocation remains in flight.
+ 	 */
+@@ -3165,7 +3168,7 @@ SYSCALL_DEFINE1(swapoff, const char __user *, specialfile)
+ 		atomic_dec(&nr_rotate_swap);
+ 
+ 	mutex_lock(&swapon_mutex);
+-	spin_lock(&swap_lock);
++	percpu_down_write(&swapon_rwsem);
+ 	spin_lock(&p->lock);
+ 	drain_mmlist();
+ 
+@@ -3176,7 +3179,7 @@ SYSCALL_DEFINE1(swapoff, const char __user *, specialfile)
+ 	p->max = 0;
+ 	p->cluster_info = NULL;
+ 	spin_unlock(&p->lock);
+-	spin_unlock(&swap_lock);
++	percpu_up_write(&swapon_rwsem);
+ 	arch_swap_invalidate_area(p->type);
+ 	zswap_swapoff(p->type);
+ 	mutex_unlock(&swapon_mutex);
+@@ -3195,10 +3198,14 @@ SYSCALL_DEFINE1(swapoff, const char __user *, specialfile)
+ 	 * Clear the SWP_USED flag after all resources are freed so that swapon
+ 	 * can reuse this swap_info in alloc_swap_info() safely.  It is ok to
+ 	 * not hold p->lock after we cleared its SWP_WRITEOK.
++	 *
++	 * The write lock ensures the flag clear is visible to lockless
++	 * readers of swap_type_to_info() before alloc_swap_info() reuses
++	 * this slot.
+ 	 */
+-	spin_lock(&swap_lock);
++	percpu_down_write(&swapon_rwsem);
+ 	p->flags = 0;
+-	spin_unlock(&swap_lock);
++	percpu_up_write(&swapon_rwsem);
+ 
+ 	atomic_inc(&proc_poll_event);
+ 	wake_up_interruptible(&proc_poll_wait);
+@@ -3358,13 +3365,13 @@ static struct swap_info_struct *alloc_swap_info(void)
+ 		return ERR_PTR(-ENOMEM);
+ 	}
+ 
+-	spin_lock(&swap_lock);
++	percpu_down_write(&swapon_rwsem);
+ 	for (type = 0; type < nr_swapfiles; type++) {
+ 		if (!(swap_info[type]->flags & SWP_USED))
+ 			break;
+ 	}
+ 	if (type >= MAX_SWAPFILES) {
+-		spin_unlock(&swap_lock);
++		percpu_up_write(&swapon_rwsem);
+ 		percpu_ref_exit(&p->users);
+ 		kvfree(p);
+ 		return ERR_PTR(-EPERM);
+@@ -3389,7 +3396,7 @@ static struct swap_info_struct *alloc_swap_info(void)
+ 	plist_node_init(&p->list, 0);
+ 	plist_node_init(&p->avail_list, 0);
+ 	p->flags = SWP_USED;
+-	spin_unlock(&swap_lock);
++	percpu_up_write(&swapon_rwsem);
+ 	if (defer) {
+ 		percpu_ref_exit(&defer->users);
+ 		kvfree(defer);
+@@ -3815,9 +3822,9 @@ SYSCALL_DEFINE2(swapon, const char __user *, specialfile, int, swap_flags)
+ 	 * Clear the SWP_USED flag after all resources are freed so
+ 	 * alloc_swap_info can reuse this si safely.
+ 	 */
+-	spin_lock(&swap_lock);
++	percpu_down_write(&swapon_rwsem);
+ 	si->flags = 0;
+-	spin_unlock(&swap_lock);
++	percpu_up_write(&swapon_rwsem);
+ 	if (inced_nr_rotate_swap)
+ 		atomic_dec(&nr_rotate_swap);
+ 	if (swap_file)
+@@ -3835,14 +3842,14 @@ void si_swapinfo(struct sysinfo *val)
+ 	struct swap_info_struct *si;
+ 	unsigned long nr_to_be_unused = 0;
+ 
+-	spin_lock(&swap_lock);
++	percpu_down_read(&swapon_rwsem);
+ 	for_each_swap(si) {
+ 		if (!(si->flags & SWP_WRITEOK))
+ 			nr_to_be_unused += swap_usage_in_pages(si);
+ 	}
+ 	val->freeswap = atomic_long_read(&nr_swap_pages) + nr_to_be_unused;
+ 	val->totalswap = total_swap_pages + nr_to_be_unused;
+-	spin_unlock(&swap_lock);
++	percpu_up_read(&swapon_rwsem);
+ }
+ 
+ /*
+-- 
+2.55.0

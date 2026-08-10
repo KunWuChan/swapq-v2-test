@@ -1,0 +1,40 @@
+From 22ec384c63f514b50bba818dc0050702b046e361 Mon Sep 17 00:00:00 2001
+From: Kairui Song <kasong@tencent.com>
+Date: Tue, 14 Jul 2026 01:25:39 +0800
+Subject: [RFC PATCH v2 01/13] mm/swap: remove unused parameter for reading
+ swap header
+
+No feature change, just a minor cleanup.
+
+Signed-off-by: Kairui Song <kasong@tencent.com>
+---
+ mm/swapfile.c | 7 +++----
+ 1 file changed, 3 insertions(+), 4 deletions(-)
+
+diff --git a/mm/swapfile.c b/mm/swapfile.c
+index 70b90fa9c2a0..e33786578334 100644
+--- a/mm/swapfile.c
++++ b/mm/swapfile.c
+@@ -3460,9 +3460,8 @@ __weak unsigned long arch_max_swapfile_size(void)
+ 	return generic_max_swapfile_size();
+ }
+ 
+-static unsigned long read_swap_header(struct swap_info_struct *si,
+-					union swap_header *swap_header,
+-					struct inode *inode)
++static unsigned long read_swap_header(union swap_header *swap_header,
++				      struct inode *inode)
+ {
+ 	int i;
+ 	unsigned long maxpages;
+@@ -3686,7 +3685,7 @@ SYSCALL_DEFINE2(swapon, const char __user *, specialfile, int, swap_flags)
+ 	}
+ 	swap_header = kmap_local_folio(folio, 0);
+ 
+-	maxpages = read_swap_header(si, swap_header, inode);
++	maxpages = read_swap_header(swap_header, inode);
+ 	if (unlikely(!maxpages)) {
+ 		error = -EINVAL;
+ 		goto bad_swap_unlock_inode;
+-- 
+2.55.0

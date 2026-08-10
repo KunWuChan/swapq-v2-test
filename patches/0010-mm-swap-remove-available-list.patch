@@ -1,0 +1,136 @@
+From f205c502011b787773fd2732ea002eda5b24cc3e Mon Sep 17 00:00:00 2001
+From: Kairui Song <kasong@tencent.com>
+Date: Tue, 14 Jul 2026 01:25:48 +0800
+Subject: [RFC PATCH v2 10/13] mm/swap: remove available list
+
+Pure cleanup, no functional change.
+
+After the priority queue replaced the allocator's device selection,
+swap_avail_head and swap_avail_lock are no longer used. Remove them.
+
+The throttle path now walks swap_active_head under swapon_rwsem.
+Check SWP_WRITEOK and the existing off-list state. This preserves the old
+priority ordering and does not select a full swap device.
+
+Signed-off-by: Kairui Song <kasong@tencent.com>
+Signed-off-by: Lian Wang (Processmission) <lianux.mm@gmail.com>
+---
+ include/linux/swap.h |  1 -
+ mm/swapfile.c        | 33 ++++++---------------------------
+ 2 files changed, 6 insertions(+), 28 deletions(-)
+
+diff --git a/include/linux/swap.h b/include/linux/swap.h
+index 94173e59dc0b..bf6e1a491ae1 100644
+--- a/include/linux/swap.h
++++ b/include/linux/swap.h
+@@ -293,7 +293,6 @@ struct swap_info_struct {
+ 	struct work_struct discard_work; /* discard worker */
+ 	struct work_struct reclaim_work; /* reclaim worker */
+ 	struct list_head discard_clusters; /* discard clusters list */
+-	struct plist_node avail_list;   /* entry in swap_avail_head */
+ 	const struct swap_ops *ops;
+ };
+ 
+diff --git a/mm/swapfile.c b/mm/swapfile.c
+index 2c6765506970..5b32a33341d5 100644
+--- a/mm/swapfile.c
++++ b/mm/swapfile.c
+@@ -96,21 +96,6 @@ static const char Bad_offset[] = "Bad swap offset entry ";
+  */
+ static PLIST_HEAD(swap_active_head);
+ 
+-/*
+- * all available (active, not full) swap_info_structs
+- * protected with swap_avail_lock, ordered by priority.
+- * This is used by folio_alloc_swap() instead of swap_active_head
+- * because swap_active_head includes all swap_info_structs,
+- * but folio_alloc_swap() doesn't need to look at full ones.
+- * This uses its own lock instead of swapon_rwsem because when a
+- * swap_info_struct changes between not-full/full, it needs to
+- * add/remove itself to/from this list, but the swap_info_struct->lock
+- * is held and the locking order requires swapon_rwsem to be taken
+- * before any swap_info_struct->lock.
+- */
+-static PLIST_HEAD(swap_avail_head);
+-static DEFINE_SPINLOCK(swap_avail_lock);
+-
+ static inline struct swap_info_struct *__swap_iter(int *i, unsigned long flag)
+ {
+ 	lockdep_assert_held(&swapon_rwsem);
+@@ -1583,7 +1568,6 @@ static void del_from_avail_list(struct swap_info_struct *si, bool swapoff)
+ {
+ 	unsigned long pages;
+ 
+-	spin_lock(&swap_avail_lock);
+ 	spin_lock(&swap_queue_update_lock);
+ 
+ 	/*
+@@ -1603,10 +1587,8 @@ static void del_from_avail_list(struct swap_info_struct *si, bool swapoff)
+ 	}
+ 
+ 	swap_queue_mask(si);
+-	plist_del(&si->avail_list, &swap_avail_head);
+ skip:
+ 	spin_unlock(&swap_queue_update_lock);
+-	spin_unlock(&swap_avail_lock);
+ }
+ 
+ /* SWAP_USAGE_OFFLIST_BIT can only be cleared by this helper. */
+@@ -1615,7 +1597,6 @@ static void add_to_avail_list(struct swap_info_struct *si)
+ 	long val;
+ 	unsigned long pages;
+ 
+-	spin_lock(&swap_avail_lock);
+ 	spin_lock(&swap_queue_update_lock);
+ 
+ 	/*
+@@ -1646,10 +1627,8 @@ static void add_to_avail_list(struct swap_info_struct *si)
+ 	}
+ 
+ 	swap_queue_unmask(si);
+-	plist_add(&si->avail_list, &swap_avail_head);
+ skip:
+ 	spin_unlock(&swap_queue_update_lock);
+-	spin_unlock(&swap_avail_lock);
+ }
+ 
+ /*
+@@ -3677,7 +3656,6 @@ static struct swap_info_struct *alloc_swap_info(void)
+ 	}
+ 	p->swap_extent_root = RB_ROOT;
+ 	plist_node_init(&p->list, 0);
+-	plist_node_init(&p->avail_list, 0);
+ 	p->flags = SWP_USED;
+ 	percpu_up_write(&swapon_rwsem);
+ 	if (defer) {
+@@ -4085,7 +4063,6 @@ SYSCALL_DEFINE2(swapon, const char __user *, specialfile, int, swap_flags)
+ 	 */
+ 	si->prio = prio;
+ 	si->list.prio = -si->prio;
+-	si->avail_list.prio = -si->prio;
+ 
+ 	/*
+ 	 * Publish swap_file before making the percpu ref live, then add the device
+@@ -4229,14 +4206,16 @@ void __folio_throttle_swaprate(struct folio *folio, gfp_t gfp)
+ 	if (current->throttle_disk)
+ 		return;
+ 
+-	spin_lock(&swap_avail_lock);
+-	plist_for_each_entry(si, &swap_avail_head, avail_list) {
+-		if (si->bdev) {
++	percpu_down_read(&swapon_rwsem);
++	plist_for_each_entry(si, &swap_active_head, list) {
++		if ((si->flags & SWP_WRITEOK) &&
++		    !(atomic_long_read(&si->inuse_pages) &
++		      SWAP_USAGE_OFFLIST_BIT) && si->bdev) {
+ 			blkcg_schedule_throttle(si->bdev->bd_disk, true);
+ 			break;
+ 		}
+ 	}
+-	spin_unlock(&swap_avail_lock);
++	percpu_up_read(&swapon_rwsem);
+ }
+ #endif
+ 
+-- 
+2.55.0
