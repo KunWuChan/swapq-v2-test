@@ -23,8 +23,8 @@ extract_build_samples() {
 
     echo ""
     echo "===== Build Samples ====="
-    printf "%-15s %-10s %-10s %-20s %-20s %-10s\n" \
-        "Sample" "Exit" "OOM" "Elapsed" "System Time" "Peak ZRAM(KiB)"
+    printf "%-15s %-8s %-8s %-10s %-8s %-20s %-20s\n" \
+        "Sample" "Exit" "OOM" "pswpout" "dmesg" "Elapsed" "System Time"
     printf "%s\n" "$(printf '%.0s-' {1..100})"
 
     for sample_dir in "$bench_dir"/sample-* "$bench_dir"/warmup; do
@@ -35,15 +35,17 @@ extract_build_samples() {
         local time_file="$sample_dir/time.txt"
 
         if [ -f "$result_file" ]; then
-            local exit_code oom elapsed sys_time peak
+            local exit_code oom pswpout dmesg_bad elapsed sys_time
             exit_code=$(grep 'build_exit=' "$result_file" | cut -d= -f2)
             oom=$(grep 'oom_kill=' "$result_file" | cut -d= -f2)
+            pswpout=$(grep 'pswpout_delta=' "$result_file" | cut -d= -f2)
+            dmesg_bad=$(grep 'dmesg_bad=' "$result_file" | cut -d= -f2)
             elapsed=$(grep 'Elapsed' "$time_file" 2>/dev/null | awk '{print $NF}' || echo "N/A")
             sys_time=$(grep 'System time' "$time_file" 2>/dev/null | awk '{print $NF}' || echo "N/A")
-            peak=$(grep 'peak_used_kib' "$result_file" 2>/dev/null | sed 's/peak_used_kib//' | xargs || echo "N/A")
 
-            printf "%-15s %-10s %-10s %-20s %-20s %-10s\n" \
-                "$name" "${exit_code:-?}" "${oom:-?}" "$elapsed" "$sys_time" "${peak:0:50}..."
+            printf "%-15s %-8s %-8s %-10s %-8s %-20s %-20s\n" \
+                "$name" "${exit_code:-?}" "${oom:-?}" "${pswpout:-?}" \
+                "${dmesg_bad:-?}" "$elapsed" "$sys_time"
         fi
     done
 }
@@ -72,47 +74,54 @@ extract_brd_samples() {
     done
 }
 
-# ── Compare D vs E ─────────────────────────────────────────
-compare_arms() {
-    info "Comparing Arm D vs Arm E..."
+# ── Compare v1 and v2 families without conflating their bases ───────────────
+compare_group() {
+    local label=$1
+    shift
+    local arms=("$@") workload arm bench
 
-    local dir_d="$RESULT_BASE/arm-D"
-    local dir_e="$RESULT_BASE/arm-E"
-
+    echo ""
+    echo "######## $label ########"
     for workload in 2g 3g brd; do
         echo ""
         echo "===== $workload ====="
-
-        # Find latest bench dirs
-        local bench_d=$(ls -td "$dir_d"/bench-${workload}-* 2>/dev/null | head -1)
-        local bench_e=$(ls -td "$dir_e"/bench-${workload}-* 2>/dev/null | head -1)
-
-        if [ -z "$bench_d" ] || [ -z "$bench_e" ]; then
-            echo "  Missing data: D=${bench_d:-none} E=${bench_e:-none}"
-            continue
-        fi
-
-        # Collect measured sample times
-        echo "  Arm D (base):"
-        for f in "$bench_d"/sample-*/time.txt; do
-            [ -f "$f" ] || continue
-            echo "    $(grep 'System time\|Elapsed' "$f" 2>/dev/null | paste -sd ';')"
+        for arm in "${arms[@]}"; do
+            bench=$(ls -td "$RESULT_BASE/arm-$arm"/bench-${workload}-* 2>/dev/null | head -1 || true)
+            printf "  Arm %s (%s): " "$arm" "$(arm_desc "$arm")"
+            if [ -z "$bench" ]; then
+                echo "MISSING"
+                continue
+            fi
+            valid_elapsed_seconds "$bench" | awk '
+                { sum += $1; n++ }
+                END { if (n) printf "%.2f min (%d valid)\n", sum/n/60, n;
+                      else print "INVALID (0 valid)" }'
         done
+    done
+}
 
-        echo "  Arm E (v2):"
-        for f in "$bench_e"/sample-*/time.txt; do
-            [ -f "$f" ] || continue
-            echo "    $(grep 'System time\|Elapsed' "$f" 2>/dev/null | paste -sd ';')"
-        done
+compare_arms() {
+    info "Comparing v1 A/B/C and v2 D/E as separate families..."
+    compare_group "v1 progression (same v1 history)" A B C
+    compare_group "v2 attribution (exact v2 base versus v2 patches)" D E
+    echo ""
+    echo "Do not treat A/C versus D/E as a patch-only performance delta: the base histories differ."
+}
 
-        # Compute averages
-        echo ""
-        echo "  Average elapsed (D):"
-        grep -h 'Elapsed' "$bench_d"/sample-*/time.txt 2>/dev/null | \
-            awk '{split($NF,a,":"); sum+=a[1]*60+a[2]} END{printf "%.2f min\n", sum/NR/60}'
-        echo "  Average elapsed (E):"
-        grep -h 'Elapsed' "$bench_e"/sample-*/time.txt 2>/dev/null | \
-            awk '{split($NF,a,":"); sum+=a[1]*60+a[2]} END{printf "%.2f min\n", sum/NR/60}'
+valid_elapsed_seconds() {
+    local bench=$1 result time_value
+    for result in "$bench"/sample-*/result.txt "$bench"/brd-*/result.txt; do
+        [ -f "$result" ] || continue
+        grep -qx 'build_exit=0' "$result" || continue
+        grep -qx 'oom_kill=0' "$result" || continue
+        grep -qx 'dmesg_bad=0' "$result" || continue
+        awk -F= '$1 == "pswpout_delta" && $2 > 0 { ok=1 } END { exit !ok }' "$result" || continue
+        time_value=$(grep 'Elapsed' "${result%/result.txt}/time.txt" | awk '{print $NF}')
+        awk -F: '
+            NF == 3 { print $1 * 3600 + $2 * 60 + $3 }
+            NF == 2 { print $1 * 60 + $2 }
+            NF == 1 { print $1 }
+        ' <<< "$time_value"
     done
 }
 
@@ -125,7 +134,8 @@ find "$RESULT_BASE" -maxdepth 3 -name "bench-*" -type d 2>/dev/null | sort | whi
 done
 
 # Extract results
-for bench_dir in $(find "$RESULT_BASE" -maxdepth 3 -name "bench-2g*" -o -name "bench-3g*" -type d 2>/dev/null | sort); do
+for bench_dir in $(find "$RESULT_BASE" -maxdepth 3 -type d \
+        \( -name "bench-2g*" -o -name "bench-3g*" \) 2>/dev/null | sort); do
     extract_build_samples "$bench_dir"
 done
 
@@ -149,4 +159,4 @@ find "$RESULT_BASE" -name "functional-*" -type d 2>/dev/null | sort | while read
     done
 done
 
-info "Done. Run with --compare for D vs E comparison."
+info "Done. Run with --compare for separate A/B/C and D/E comparisons."

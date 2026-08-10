@@ -5,7 +5,7 @@
 #   2. zram can be loaded and used
 #   3. memcg is working
 #   4. THP is available
-#   5. swap basic functionality works
+#   5. swap basic functionality works without disabling existing swap
 
 set -euo pipefail
 
@@ -18,6 +18,12 @@ fail() { echo -e "${RED}[FAIL]${NC} $*"; }
 info() { echo -e "${YELLOW}[INFO]${NC} $*"; }
 
 FAILS=0
+
+HOSTNAME_NOW=$(hostname)
+if [[ ! "$HOSTNAME_NOW" =~ kp ]] && [ "${ALLOW_NON_KP_HOST:-0}" != 1 ]; then
+    fail "Expected hostname matching 'kp', got '$HOSTNAME_NOW'"
+    exit 1
+fi
 
 echo "=========================================="
 echo "Swap Queue v2 - Environment Verification"
@@ -37,7 +43,7 @@ for cmd in make git cc gcc ld awk grep python3 mkswap swapon swapoff modprobe zr
 done
 
 # Optional
-for cmd in cgcreate cgexec cgdelete usemem; do
+for cmd in usemem; do
     if command -v "$cmd" &>/dev/null; then
         pass "$cmd (optional)"
     else
@@ -78,57 +84,51 @@ check_config CONFIG_TRANSPARENT_HUGEPAGE "y"
 check_config CONFIG_BLK_DEV_RAM "y|m"
 
 # ── 3. ZRAM test ───────────────────────────────────────────
-info "--- Testing zram ---"
-ORIG_SWAPS=$(cat /proc/swaps)
-
-swapoff -a 2>/dev/null || true
+info "--- Testing one unused zram device ---"
 modprobe zram 2>/dev/null || true
-
-# Reset any existing zram
-for dev in /sys/block/zram*; do
-    [ -w "$dev/reset" ] && echo 1 > "$dev/reset" 2>/dev/null || true
-done
-
-# Create a test zram
-echo lzo-rle > /sys/block/zram0/comp_algorithm 2>/dev/null || true
-echo 64M > /sys/block/zram0/disksize 2>/dev/null
-mkswap /dev/zram0 2>/dev/null
-
-if swapon /dev/zram0 2>/dev/null; then
-    pass "zram0 swap enabled"
-    cat /proc/swaps | grep zram
-else
-    fail "Could not enable zram0 swap"
+TEST_ZRAM=$(zramctl -f 2>/dev/null || true)
+if [ -z "$TEST_ZRAM" ]; then
+    fail "No unused zram device is available; existing devices were left untouched"
     FAILS=$((FAILS + 1))
+else
+    ZRAM_NAME=${TEST_ZRAM#/dev/}
+    cleanup_verify_zram() {
+        swapoff "$TEST_ZRAM" 2>/dev/null || true
+        [ -w "/sys/block/$ZRAM_NAME/reset" ] &&
+            echo 1 > "/sys/block/$ZRAM_NAME/reset" 2>/dev/null || true
+    }
+    trap cleanup_verify_zram EXIT
+
+    echo lzo-rle > "/sys/block/$ZRAM_NAME/comp_algorithm" 2>/dev/null || true
+    echo 64M > "/sys/block/$ZRAM_NAME/disksize"
+    mkswap "$TEST_ZRAM" >/dev/null
+    if swapon -p 10 "$TEST_ZRAM"; then
+        pass "$TEST_ZRAM swap enabled; pre-existing swap remained active"
+        awk -v target="$TEST_ZRAM" 'NR == 1 || $1 == target' /proc/swaps
+    else
+        fail "Could not enable $TEST_ZRAM"
+        FAILS=$((FAILS + 1))
+    fi
+    cleanup_verify_zram
+    trap - EXIT
 fi
 
-# Cleanup
-swapoff /dev/zram0 2>/dev/null || true
-echo 1 > /sys/block/zram0/reset 2>/dev/null || true
-
-# Restore original swap
-echo "$ORIG_SWAPS" | while read -r line; do
-    dev=$(echo "$line" | awk 'NR>1{print $1}')
-    prio=$(echo "$line" | awk 'NR>1{print $5}')
-    [ -n "$dev" ] || continue
-    swapon -p "${prio:--1}" "$dev" 2>/dev/null || true
-done
-
 # ── 4. Memory cgroup test ──────────────────────────────────
-info "--- Testing memcg ---"
-if [ -d /sys/fs/cgroup ] && command -v cgcreate &>/dev/null; then
-    cgcreate -g memory:swapq-verify 2>/dev/null || true
-    if [ -d /sys/fs/cgroup/swapq-verify ]; then
-        echo 50M > /sys/fs/cgroup/swapq-verify/memory.max 2>/dev/null && \
-            pass "memcg memory.max set to 50M" || \
-            fail "Cannot set memory.max (cgroup v1?)"
-        cgdelete memory:swapq-verify 2>/dev/null || true
+info "--- Testing cgroup v2 memory controller ---"
+VERIFY_CG=/sys/fs/cgroup/swapq-verify-$$
+if [ -f /sys/fs/cgroup/cgroup.controllers ] &&
+        grep -qw memory /sys/fs/cgroup/cgroup.controllers; then
+    if mkdir "$VERIFY_CG" && echo 50M > "$VERIFY_CG/memory.max"; then
+        pass "cgroup v2 memory.max set to 50M"
+        rmdir "$VERIFY_CG"
     else
-        fail "Cannot create memcg"
+        fail "Cannot create or configure $VERIFY_CG"
+        rmdir "$VERIFY_CG" 2>/dev/null || true
         FAILS=$((FAILS + 1))
     fi
 else
-    info "memcg not tested (cgroup fs or cgcreate missing)"
+    fail "cgroup v2 memory controller is required by the benchmark scripts"
+    FAILS=$((FAILS + 1))
 fi
 
 # ── 5. THP check ───────────────────────────────────────────
@@ -159,11 +159,10 @@ if [ "$FAILS" -eq 0 ]; then
     echo ""
     echo "Next steps:"
     echo "  1. bash scripts/00-apply-patches.sh"
-    echo "  2. bash scripts/01-build-arm.sh D"
-    echo "  3. bash scripts/01-build-arm.sh E"
-    echo "  4. bash scripts/02-switch-kernel.sh E"
-    echo "  5. bash scripts/03-run-functional.sh"
-    echo "  6. bash scripts/04-run-benchmark.sh 2g"
+    echo "  2. for arm in A B C D E; do bash scripts/01-build-arm.sh \"\$arm\"; done"
+    echo "  3. bash scripts/02-switch-kernel.sh E"
+    echo "  4. bash scripts/03-run-functional.sh"
+    echo "  5. bash scripts/04-run-benchmark.sh 2g"
 else
     fail "$FAILS check(s) failed. Fix before proceeding."
 fi

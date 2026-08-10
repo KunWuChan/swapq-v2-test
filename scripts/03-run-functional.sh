@@ -13,6 +13,12 @@
 set -euo pipefail
 . "$(dirname "$0")/lib-common.sh"
 
+check_host
+[ "$(detect_running_arm)" = E ] || {
+    error "Functional queue tests must run on the identified Arm E kernel"
+    exit 1
+}
+
 QUICK_MODE=0
 if [ "${1:-}" == "--quick" ]; then
     QUICK_MODE=1
@@ -30,25 +36,61 @@ info "Results: $RUN_DIR"
 info "=========================================="
 
 # ── Helper: exit trap ──────────────────────────────────────
-ORIG_SWAP_STATE=$(cat /proc/swaps)
+ORIG_SWAP_STATE="$RUN_DIR/original-swaps.txt"
+snapshot_swap_state "$ORIG_SWAP_STATE"
+ORIG_THP=$(cat /sys/kernel/mm/transparent_hugepage/enabled 2>/dev/null || true)
 DMESG_BEFORE=$(dmesg | wc -l)
+
+if [ "$(id -u)" -ne 0 ]; then
+    error "Functional tests must run as root"
+    exit 1
+fi
+if [ ! -f /sys/fs/cgroup/cgroup.controllers ] ||
+        ! grep -qw memory /sys/fs/cgroup/cgroup.controllers; then
+    error "Functional tests require cgroup v2 with the memory controller"
+    exit 1
+fi
+
+start_memcg_alloc() {
+    local name=$1 limit=$2 bytes=$3 hold=${4:-30}
+    ALLOC_CG="/sys/fs/cgroup/$name"
+    mkdir "$ALLOC_CG"
+    echo "$limit" > "$ALLOC_CG/memory.max"
+    echo max > "$ALLOC_CG/memory.swap.max"
+    CG_PATH="$ALLOC_CG" ALLOC_BYTES="$bytes" HOLD_SECS="$hold" python3 -c '
+import os, time
+cg = os.environ["CG_PATH"]
+with open(cg + "/cgroup.procs", "w") as f:
+    f.write(str(os.getpid()))
+size = int(os.environ["ALLOC_BYTES"])
+data = bytearray(size)
+page = os.urandom(4096)
+for i in range(0, size, 4096):
+    data[i:i + 4096] = page[:min(4096, size - i)]
+print("allocated", size, flush=True)
+time.sleep(int(os.environ["HOLD_SECS"]))
+' > "$RUN_DIR/${name}.log" 2>&1 &
+    ALLOC_PID=$!
+}
+
+stop_memcg_alloc() {
+    local pid=${1:-} cg=${2:-}
+    [ -n "$pid" ] && kill "$pid" 2>/dev/null || true
+    [ -n "$pid" ] && wait "$pid" 2>/dev/null || true
+    [ -n "$cg" ] && rmdir "$cg" 2>/dev/null || true
+}
 
 cleanup_test() {
     local rc=$?
     info "Cleaning up..."
-    # Remove test zram devices
-    for dev in /dev/zram*; do
-        [ -b "$dev" ] || continue
-        swapoff "$dev" 2>/dev/null || true
-    done
-    for dev in /sys/block/zram*; do
-        [ -w "$dev/reset" ] || continue
-        echo 1 > "$dev/reset" 2>/dev/null || true
-    done
-    # Restore original swap if needed
-    if ! awk '$1 ~ /\/swap/ || $1 ~ /dm-/{found=1} END{exit !found}' /proc/swaps; then
-        swapon -p -1 /dev/dm-1 2>/dev/null || swapon -p -1 /swap.img 2>/dev/null || true
-    fi
+    stop_memcg_alloc "${ALLOC_PID:-}" "${ALLOC_CG:-}"
+    cleanup_zram_devices 3
+    restore_swap_state "$ORIG_SWAP_STATE" || rc=1
+    case "$ORIG_THP" in
+        *\[always\]*) echo always > /sys/kernel/mm/transparent_hugepage/enabled ;;
+        *\[madvise\]*) echo madvise > /sys/kernel/mm/transparent_hugepage/enabled ;;
+        *\[never\]*) echo never > /sys/kernel/mm/transparent_hugepage/enabled ;;
+    esac
     exit "$rc"
 }
 trap cleanup_test EXIT
@@ -62,7 +104,7 @@ cat /proc/swaps | tee -a "$RUN_DIR/00-env.txt"
 
 # ── Test 1: Same-priority distribution ─────────────────────
 info "=== Test 1: Same-priority distribution ==="
-swapoff -a 2>/dev/null || true
+swapoff -a
 modprobe zram 2>/dev/null || true
 
 # Create 3 zram devices: zram0,zram1 at prio 10, zram2 at prio 0
@@ -79,28 +121,11 @@ info "Swap layout:"
 cat /proc/swaps
 
 # Allocate swap pages using memcg pressure
+PSWPOUT_BEFORE=0
 if [ "$QUICK_MODE" -eq 0 ]; then
-    # Create a memcg and force ~100MB swap
-    if [ -d /sys/fs/cgroup ]; then
-        cgcreate -g memory:swapq-test1 2>/dev/null || true
-        echo 50M > /sys/fs/cgroup/swapq-test1/memory.max 2>/dev/null || true
-        # Run a small allocator that forces swap
-        python3 -c "
-import os, time
-data = []
-try:
-    for i in range(200):
-        data.append(bytearray(2*1024*1024))  # 2MB each
-except MemoryError:
-    pass
-time.sleep(2)
-" 2>/dev/null &
-        ALLOC_PID=$!
-        sleep 5
-        kill $ALLOC_PID 2>/dev/null || true
-        wait $ALLOC_PID 2>/dev/null || true
-        cgdelete memory:swapq-test1 2>/dev/null || true
-    fi
+        PSWPOUT_BEFORE=$(awk '$1 == "pswpout" { print $2 }' /proc/vmstat)
+        start_memcg_alloc swapq-test1 50M $((400 * 1024 * 1024)) 30
+        sleep 8
 fi
 
 # Check distribution
@@ -109,23 +134,37 @@ cat /proc/swaps | tee "$RUN_DIR/01-distribution.txt"
 
 # Verify: zram2 (low priority) should have 0 usage
 ZRAM2_USED=$(awk '$1=="/dev/zram2"{print $4; exit}' /proc/swaps)
-if [ "${ZRAM2_USED:-0}" -eq 0 ]; then
-    info "PASS: Low-priority device correctly isolated"
+ZRAM0_USED=$(awk '$1=="/dev/zram0"{print $4; exit}' /proc/swaps)
+ZRAM1_USED=$(awk '$1=="/dev/zram1"{print $4; exit}' /proc/swaps)
+PSWPOUT_AFTER=$(awk '$1 == "pswpout" { print $2 }' /proc/vmstat)
+ALLOC_ALIVE=0
+[ -n "${ALLOC_PID:-}" ] && kill -0 "$ALLOC_PID" 2>/dev/null && ALLOC_ALIVE=1
+stop_memcg_alloc "${ALLOC_PID:-}" "${ALLOC_CG:-}"
+unset ALLOC_PID ALLOC_CG
+if [ "$QUICK_MODE" -eq 1 ]; then
+    info "Skipped distribution pressure (--quick mode)"
+elif [ "$ALLOC_ALIVE" -eq 1 ] && [ "${ZRAM2_USED:-0}" -eq 0 ] &&
+        [ "${ZRAM0_USED:-0}" -gt 0 ] &&
+        [ "${ZRAM1_USED:-0}" -gt 0 ] &&
+        [ "$PSWPOUT_AFTER" -gt "$PSWPOUT_BEFORE" ]; then
+    info "PASS: both same-priority devices used; low-priority device isolated"
     TESTS_PASSED=$((TESTS_PASSED + 1))
 else
-    warn "FAIL: Low-priority device got $ZRAM2_USED KiB swap"
+    warn "FAIL: no proven same-priority distribution (z0=${ZRAM0_USED:-0}, z1=${ZRAM1_USED:-0}, z2=${ZRAM2_USED:-0})"
     TESTS_FAILED=$((TESTS_FAILED + 1))
 fi
 
 # ── Test 2: swapon/swapoff concurrency ─────────────────────
 if [ "$QUICK_MODE" -eq 0 ]; then
     info "=== Test 2: swapon/swapoff concurrency ==="
-    swapoff -a 2>/dev/null || true
+    swapoff -a
 
     # Run rapid swapon/swapoff cycles while reading /proc/swaps
     {
+        echo 1 > /sys/block/zram0/reset 2>/dev/null || true
+        echo lzo-rle > /sys/block/zram0/comp_algorithm 2>/dev/null || true
+        echo 64M > /sys/block/zram0/disksize 2>/dev/null
         for ((i = 0; i < 200; i++)); do
-            echo 64M > /sys/block/zram0/disksize 2>/dev/null
             mkswap /dev/zram0 2>/dev/null
             swapon -p 5 /dev/zram0 2>/dev/null
             swapoff /dev/zram0 2>/dev/null
@@ -145,10 +184,13 @@ if [ "$QUICK_MODE" -eq 0 ]; then
     } &
     READER_PID=$!
 
-    wait $SWAPON_PID 2>/dev/null || true
-    wait $READER_PID 2>/dev/null || true
+    SWAPON_RC=0
+    READER_RC=0
+    wait "$SWAPON_PID" || SWAPON_RC=$?
+    wait "$READER_PID" || READER_RC=$?
 
-    if [ -f "$RUN_DIR/02-concurrency-errors.txt" ]; then
+    if [ -f "$RUN_DIR/02-concurrency-errors.txt" ] ||
+            [ "$SWAPON_RC" -ne 0 ] || [ "$READER_RC" -ne 0 ]; then
         warn "FAIL: Malformed /proc/swaps rows detected"
         TESTS_FAILED=$((TESTS_FAILED + 1))
     else
@@ -161,7 +203,7 @@ fi
 
 # ── Test 3: Full/unmask/refill ─────────────────────────────
 info "=== Test 3: Full/unmask/refill ==="
-swapoff -a 2>/dev/null || true
+swapoff -a
 # Reset zram
 for i in 0 1; do
     [ -w "/sys/block/zram${i}/reset" ] && echo 1 > "/sys/block/zram${i}/reset" 2>/dev/null || true
@@ -175,14 +217,13 @@ swapon -p 10 /dev/zram0
 # Fill zram0 completely
 if [ "$QUICK_MODE" -eq 0 ]; then
     PSWPOUT_BEFORE=$(grep pswpout /proc/vmstat | awk '{print $2}')
-    python3 -c "
-data = []
-for i in range(100):
-    try:
-        data.append(bytearray(1*1024*1024))
-    except:
-        break
-" 2>/dev/null || true
+    start_memcg_alloc swapq-full 32M $((34 * 1024 * 1024)) 30
+    FULL_PID=$ALLOC_PID
+    FULL_CG=$ALLOC_CG
+    sleep 5
+    FULL_ALIVE=0
+    kill -0 "$FULL_PID" 2>/dev/null && FULL_ALIVE=1
+    ZRAM0_USED=$(awk '$1=="/dev/zram0"{print $4; exit}' /proc/swaps)
     PSWPOUT_AFTER=$(grep pswpout /proc/vmstat | awk '{print $2}')
     info "pswpout delta: $((PSWPOUT_AFTER - PSWPOUT_BEFORE))"
 
@@ -192,66 +233,83 @@ for i in range(100):
     swapon -p 10 /dev/zram1
 
     ZRAM1_BEFORE=$(awk '$1=="/dev/zram1"{print $4; exit}' /proc/swaps)
-    python3 -c "
-data = []
-for i in range(50):
-    try:
-        data.append(bytearray(512*1024))
-    except:
-        break
-" 2>/dev/null || true
+    start_memcg_alloc swapq-refill 32M $((34 * 1024 * 1024)) 20
+    REFILL_PID=$ALLOC_PID
+    REFILL_CG=$ALLOC_CG
+    sleep 5
+    REFILL_ALIVE=0
+    kill -0 "$REFILL_PID" 2>/dev/null && REFILL_ALIVE=1
     ZRAM1_AFTER=$(awk '$1=="/dev/zram1"{print $4; exit}' /proc/swaps)
     info "zram1 usage: ${ZRAM1_BEFORE:-0} -> ${ZRAM1_AFTER:-0} KiB"
 
-    if [ "${ZRAM1_AFTER:-0}" -gt "${ZRAM1_BEFORE:-0}" ]; then
+    if [ "$FULL_ALIVE" -eq 1 ] && [ "$REFILL_ALIVE" -eq 1 ] &&
+            [ "${ZRAM0_USED:-0}" -ge 12288 ] &&
+            [ "$PSWPOUT_AFTER" -gt "$PSWPOUT_BEFORE" ] &&
+            [ "${ZRAM1_AFTER:-0}" -gt "${ZRAM1_BEFORE:-0}" ]; then
         info "PASS: Refill went to peer after first device full"
         TESTS_PASSED=$((TESTS_PASSED + 1))
     else
-        warn "FAIL: Refill did not reach peer"
+        warn "FAIL: no proven full/peer refill (z0=${ZRAM0_USED:-0} KiB, z1=${ZRAM1_AFTER:-0} KiB)"
         TESTS_FAILED=$((TESTS_FAILED + 1))
     fi
+    stop_memcg_alloc "$REFILL_PID" "$REFILL_CG"
+    stop_memcg_alloc "$FULL_PID" "$FULL_CG"
+    unset ALLOC_PID ALLOC_CG
 else
     info "Skipped (--quick mode)"
 fi
 
 # ── Test 4: Large folio peer retry ─────────────────────────
 info "=== Test 4: Large folio peer retry ==="
-swapoff -a 2>/dev/null || true
+swapoff -a
 for i in 0 1; do
     [ -w "/sys/block/zram${i}/reset" ] && echo 1 > "/sys/block/zram${i}/reset" 2>/dev/null || true
     echo lzo-rle > "/sys/block/zram${i}/comp_algorithm" 2>/dev/null || true
 done
 
-echo 64M > /sys/block/zram0/disksize 2>/dev/null
+echo 8M > /sys/block/zram0/disksize 2>/dev/null
 echo 64M > /sys/block/zram1/disksize 2>/dev/null
 mkswap /dev/zram0 2>/dev/null
 mkswap /dev/zram1 2>/dev/null
 swapon -p 10 /dev/zram0
-swapon -p 10 /dev/zram1
 
 # Enable THP
 echo always > /sys/kernel/mm/transparent_hugepage/enabled 2>/dev/null || true
 
 if [ "$QUICK_MODE" -eq 0 ]; then
-    THP_SWPOUT_BEFORE=$(grep thp_swpout /proc/vmstat 2>/dev/null | awk '{print $2}')
-    THP_FALLBACK_BEFORE=$(grep thp_swpout_fallback /proc/vmstat 2>/dev/null | awk '{print $2}')
+    # Keep zram0 almost full with base-page swap, then add an empty peer.
+    start_memcg_alloc swapq-large-prefill 32M $((28 * 1024 * 1024)) 30
+    PREFILL_PID=$ALLOC_PID
+    PREFILL_CG=$ALLOC_CG
+    sleep 5
+    PREFILL_ALIVE=0
+    kill -0 "$PREFILL_PID" 2>/dev/null && PREFILL_ALIVE=1
+    ZRAM0_BEFORE=$(awk '$1=="/dev/zram0"{print $4; exit}' /proc/swaps)
+    swapon -p 10 /dev/zram1
+    ZRAM1_BEFORE=$(awk '$1=="/dev/zram1"{print $4; exit}' /proc/swaps)
 
-    # Fragment zram0 by doing small allocations first
-    python3 -c "
-data = []
-# Small allocations to fragment zram0
-for i in range(200):
-    try:
-        data.append(bytearray(64*1024))  # 64KB each
-    except:
-        break
-data.clear()
-# Now try large allocation - should land on zram1 (unfragmented peer)
-try:
-    big = bytearray(2*1024*1024)
-except:
-    pass
-" 2>/dev/null || true
+    THP_SWPOUT_BEFORE=$(awk '$1 == "thp_swpout" { print $2 }' /proc/vmstat)
+    THP_FALLBACK_BEFORE=$(awk '$1 == "thp_swpout_fallback" { print $2 }' /proc/vmstat)
+
+    python3 -c '
+import ctypes, mmap, time
+MB = 1024 * 1024
+length = 4 * MB
+mapping = mmap.mmap(-1, length, flags=mmap.MAP_PRIVATE | mmap.MAP_ANONYMOUS,
+                    prot=mmap.PROT_READ | mmap.PROT_WRITE)
+base = ctypes.addressof(ctypes.c_char.from_buffer(mapping))
+aligned = (base + 2 * MB - 1) & ~(2 * MB - 1)
+offset = aligned - base
+libc = ctypes.CDLL(None, use_errno=True)
+if libc.madvise(ctypes.c_void_p(aligned), ctypes.c_size_t(2 * MB), 14) != 0:
+    raise OSError(ctypes.get_errno(), "MADV_HUGEPAGE")
+for pos in range(offset, offset + 2 * MB, 4096):
+    mapping[pos] = 1
+time.sleep(1)
+if libc.madvise(ctypes.c_void_p(aligned), ctypes.c_size_t(2 * MB), 21) != 0:
+    raise OSError(ctypes.get_errno(), "MADV_PAGEOUT")
+time.sleep(3)
+' > "$RUN_DIR/04-large-folio-helper.log" 2>&1
 
     THP_SWPOUT_AFTER=$(grep thp_swpout /proc/vmstat 2>/dev/null | awk '{print $2}')
     THP_FALLBACK_AFTER=$(grep thp_swpout_fallback /proc/vmstat 2>/dev/null | awk '{print $2}')
@@ -263,8 +321,19 @@ except:
     ZRAM1_USED=$(awk '$1=="/dev/zram1"{print $4; exit}' /proc/swaps)
     info "zram0 used: ${ZRAM0_USED:-0} KiB, zram1 used: ${ZRAM1_USED:-0} KiB"
 
-    info "PASS: Large folio test completed (check distribution above)"
-    TESTS_PASSED=$((TESTS_PASSED + 1))
+    if [ "$PREFILL_ALIVE" -eq 1 ] &&
+            [ "${ZRAM0_BEFORE:-0}" -gt 0 ] &&
+            [ "${THP_SWPOUT_AFTER:-0}" -gt "${THP_SWPOUT_BEFORE:-0}" ] &&
+            [ "${THP_FALLBACK_AFTER:-0}" -eq "${THP_FALLBACK_BEFORE:-0}" ] &&
+            [ "${ZRAM1_USED:-0}" -gt "${ZRAM1_BEFORE:-0}" ]; then
+        info "PASS: THP swapout increased, fallback did not, and peer was used"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        warn "FAIL: no proven large-folio peer retry; completion alone is not a pass"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    fi
+    stop_memcg_alloc "$PREFILL_PID" "$PREFILL_CG"
+    unset ALLOC_PID ALLOC_CG
 else
     info "Skipped (--quick mode)"
 fi

@@ -6,32 +6,79 @@ set -euo pipefail
 
 # Paths
 TEST_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-KERNEL_SRC="/home/chentao/mm"
-PATCH_DIR="$TEST_DIR/patches"
-RESULT_DIR="$TEST_DIR/results"
-CONFIG_DIR="$TEST_DIR/configs"
+KERNEL_SRC=${KERNEL_SRC:-/home/chentao/mm}
+PATCH_DIR=${PATCH_DIR:-$TEST_DIR/patches}
+RESULT_DIR=${RESULT_DIR:-$TEST_DIR/results}
+CONFIG_DIR=${CONFIG_DIR:-$TEST_DIR/configs}
 SCRIPT_DIR="$TEST_DIR/scripts"
+
+# Exact comparison points.  Never silently move Arm D to a newer rebased
+# mm-unstable commit: doing so makes the D/E attribution invalid.
+BASE_COMMIT=${BASE_COMMIT:-94f9b3980dd446b56acf1dfed649e9b32a9f3813}
+EXPECTED_V2_TREE=${EXPECTED_V2_TREE:-e41508faa11f60c1d4cf73051a0a9e38534352d5}
+V1_BEFORE_COMMIT=${V1_BEFORE_COMMIT:-bdc38bfc1262e3d1432afadd2aa2ffd83d139dbb}
+V1_PATCH8_COMMIT=${V1_PATCH8_COMMIT:-4a7d8bd1b6644d139f5aa9074141437aa3b060a3}
+V1_PATCH13_COMMIT=${V1_PATCH13_COMMIT:-a438694aa41a39aaaa23926e14d7560c147f6af3}
 
 # ARM definitions
 # These are set up by 00-apply-patches.sh:
-#   swapq-v2-base  → current mm-unstable HEAD (Arm D)
-#   swapq-v2       → base + 13 patches (Arm E)
-declare -A ARM_BRANCHES=(
-    [D]="swapq-v2-base"
-    [E]="swapq-v2"
-)
-declare -A ARM_DESC=(
-    [D]="v2 base (mm-unstable)"
-    [E]="v2 current (13 patches)"
-)
+#   swapq-v1-before  → v1 parent (Arm A)
+#   swapq-v1-patch8  → v1 through patch 8 (Arm B)
+#   swapq-v1-patch13 → complete v1 (Arm C)
+#   swapq-v2-base    → exact v2 base commit (Arm D)
+#   swapq-v2         → base + 13 patches (Arm E)
+arm_branch() {
+    case "$1" in
+        A) echo swapq-v1-before ;;
+        B) echo swapq-v1-patch8 ;;
+        C) echo swapq-v1-patch13 ;;
+        D) echo swapq-v2-base ;;
+        E) echo swapq-v2 ;;
+        *) return 1 ;;
+    esac
+}
+
+arm_desc() {
+    case "$1" in
+        A) echo "v1 parent (before queue patches)" ;;
+        B) echo "v1 through patch 8" ;;
+        C) echo "v1 complete (through patch 13)" ;;
+        D) echo "v2 exact base" ;;
+        E) echo "v2 current (13 patches)" ;;
+        *) return 1 ;;
+    esac
+}
+
+arm_expected_commit() {
+    case "$1" in
+        A) echo "$V1_BEFORE_COMMIT" ;;
+        B) echo "$V1_PATCH8_COMMIT" ;;
+        C) echo "$V1_PATCH13_COMMIT" ;;
+        D) echo "$BASE_COMMIT" ;;
+        E) return 1 ;;
+        *) return 1 ;;
+    esac
+}
 
 # Build settings (override via env)
-BUILD_JOBS=${BUILD_JOBS:-$(nproc)}
+cpu_count() {
+    if command -v nproc >/dev/null 2>&1; then
+        nproc
+    elif command -v sysctl >/dev/null 2>&1; then
+        sysctl -n hw.ncpu 2>/dev/null || getconf _NPROCESSORS_ONLN 2>/dev/null || echo 1
+    elif command -v getconf >/dev/null 2>&1; then
+        getconf _NPROCESSORS_ONLN
+    else
+        echo 1
+    fi
+}
+
+BUILD_JOBS=${BUILD_JOBS:-$(cpu_count)}
 KERNEL_CONFIG=${KERNEL_CONFIG:-$CONFIG_DIR/base.config}
 
 # Test settings
-ZRAM_TOTAL_SIZE=${ZRAM_TOTAL_SIZE:-64G}
 ZRAM_DEVICES=${ZRAM_DEVICES:-8}
+ZRAM_DEVICE_SIZE=${ZRAM_DEVICE_SIZE:-8G}
 BUILD_REPETITIONS=${BUILD_REPETITIONS:-12}
 BUILD_JOBS_BENCH=${BUILD_JOBS_BENCH:-96}
 
@@ -49,10 +96,10 @@ error() { echo -e "${RED}[ERROR]${NC} $(date '+%H:%M:%S') $*" >&2; }
 check_host() {
     local hostname
     hostname=$(hostname)
-    if [[ ! "$hostname" =~ kp ]]; then
-        warn "Expected hostname matching 'kp', got '$hostname'. Continue? [y/N]"
-        read -r ans
-        [[ "$ans" == "y" ]] || exit 1
+    if [[ ! "$hostname" =~ kp ]] && [ "${ALLOW_NON_KP_HOST:-0}" != 1 ]; then
+        error "Expected hostname matching 'kp', got '$hostname'"
+        error "Set ALLOW_NON_KP_HOST=1 only for an explicitly approved host"
+        exit 1
     fi
 }
 
@@ -69,10 +116,8 @@ check_kernel_src() {
 detect_running_arm() {
     local kver
     kver=$(uname -r)
-    if [[ "$kver" =~ -swapq-D ]]; then
-        echo "D"
-    elif [[ "$kver" =~ -swapq-E ]]; then
-        echo "E"
+    if [[ "$kver" =~ -swapq-([A-E])([^-A-Za-z0-9]|$) ]]; then
+        echo "${BASH_REMATCH[1]}"
     else
         echo "unknown"
     fi
@@ -81,7 +126,8 @@ detect_running_arm() {
 # Get kernel version string for an ARM
 get_kernel_version() {
     local arm=$1
-    local branch=${ARM_BRANCHES[$arm]}
+    local branch
+    branch=$(arm_branch "$arm")
     cd "$KERNEL_SRC"
     local commit_short
     commit_short=$(git rev-parse --short=12 "$branch")
@@ -111,59 +157,66 @@ check_dmesg_clean() {
     fi
 }
 
-# Restore system state: remove test zram/swap, restore /swap.img
-cleanup_swap_state() {
-    info "Cleaning up swap state..."
-    local dev
+snapshot_swap_state() {
+    local output=$1
+    awk 'NR > 1 { print $1, $5 }' /proc/swaps > "$output"
+}
 
-    # Stop all swap on zram
-    for dev in /dev/zram*; do
-        [ -b "$dev" ] || continue
-        swapoff "$dev" 2>/dev/null || true
-    done
+restore_swap_state() {
+    local snapshot=$1
+    local failed=0 dev prio
 
-    # Reset zram devices
-    for dev in /sys/block/zram*; do
-        [ -w "$dev/reset" ] || continue
-        echo 1 > "$dev/reset" 2>/dev/null || true
-    done
-
-    # Restore root swap if missing
-    if ! awk '$1 ~ /\/swap/ || $1 ~ /dm-/{found=1} END{exit !found}' /proc/swaps; then
-        if [ -f /swap.img ] || [ -b /dev/dm-1 ]; then
-            local swapdev="/swap.img"
-            [ -b /dev/dm-1 ] && swapdev="/dev/dm-1"
-            swapon -p -1 "$swapdev" 2>/dev/null || warn "Could not restore $swapdev"
+    while read -r dev prio; do
+        [ -n "$dev" ] || continue
+        if ! awk -v target="$dev" 'NR > 1 && $1 == target { found=1 }
+                END { exit !found }' /proc/swaps; then
+            swapon -p "$prio" "$dev" || failed=1
         fi
-    fi
+    done < "$snapshot"
 
-    info "Current swap state:"
-    cat /proc/swaps
+    if [ "$failed" -ne 0 ]; then
+        error "Failed to restore one or more original swap devices"
+        return 1
+    fi
+}
+
+cleanup_zram_devices() {
+    local count=${1:-$ZRAM_DEVICES}
+    local i
+
+    for ((i = 0; i < count; i++)); do
+        [ -b "/dev/zram$i" ] || continue
+        swapoff "/dev/zram$i" 2>/dev/null || true
+        [ -w "/sys/block/zram$i/reset" ] &&
+            echo 1 > "/sys/block/zram$i/reset" 2>/dev/null || true
+    done
 }
 
 # Setup zram swap devices for testing
-# Args: count [total_size] [algo]
+# Args: count [per_device_size] [algo]
 setup_zram_swap() {
     local count=${1:-8}
-    local total_size=${2:-$ZRAM_TOTAL_SIZE}
+    local device_size=${2:-$ZRAM_DEVICE_SIZE}
     local algo=${3:-lzo-rle}
     local i
 
-    info "Setting up $count zram devices (total $total_size, $algo)"
+    info "Setting up $count zram devices (${device_size} each, $algo)"
     modprobe zram 2>/dev/null || true
 
     for ((i = 0; i < count; i++)); do
-        # Find next free zram device
-        local dev
-        dev=$(zramctl -f 2>/dev/null || echo "/dev/zram$i")
-        if [ ! -b "$dev" ]; then
-            warn "zram$i not available, stopping at $i devices"
-            break
+        local dev="/dev/zram$i"
+        [ -b "$dev" ] || { error "$dev is unavailable"; return 1; }
+        if awk -v target="$dev" 'NR > 1 && $1 == target { found=1 }
+                END { exit !found }' /proc/swaps; then
+            error "$dev is already active; refusing to reuse it"
+            return 1
         fi
+        [ -w "/sys/block/zram$i/reset" ] &&
+            echo 1 > "/sys/block/zram$i/reset" 2>/dev/null || true
         echo "$algo" > "/sys/block/zram${i}/comp_algorithm" 2>/dev/null || true
-        echo "$total_size" > "/sys/block/zram${i}/disksize" 2>/dev/null || true
-        mkswap "$dev" 2>/dev/null
-        swapon -p 10 "$dev" 2>/dev/null  # same priority for all
+        echo "$device_size" > "/sys/block/zram${i}/disksize"
+        mkswap "$dev" >/dev/null
+        swapon -p 10 "$dev"
     done
 
     info "Swap after zram setup:"

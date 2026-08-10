@@ -1,15 +1,16 @@
 #!/bin/bash
-# Build a kernel for a specific ARM (D or E)
-# Usage: bash 01-build-arm.sh <D|E> [--config <config-file>]
+# Build a kernel for a specific comparison arm.
+# Usage: bash 01-build-arm.sh <A|B|C|D|E> [--config <config-file>]
 
 set -euo pipefail
 . "$(dirname "$0")/lib-common.sh"
 
+check_host
+
 ARM="${1:-}"
-if [ -z "$ARM" ] || [ -z "${ARM_BRANCHES[$ARM]:-}" ]; then
-    echo "Usage: $0 <D|E> [--config <file>]"
-    echo "  D = v2 base (mm-unstable without patches)"
-    echo "  E = v2 current (mm-unstable + 13 patches)"
+if [ -z "$ARM" ] || ! arm_branch "$ARM" >/dev/null 2>&1; then
+    echo "Usage: $0 <A|B|C|D|E> [--config <file>]"
+    for arm in A B C D E; do echo "  $arm = $(arm_desc "$arm")"; done
     exit 1
 fi
 
@@ -19,14 +20,12 @@ if [ "${2:-}" == "--config" ] && [ -n "${3:-}" ]; then
     CONFIG_FILE="$3"
 fi
 
-BRANCH="${ARM_BRANCHES[$ARM]}"
-DESC="${ARM_DESC[$ARM]}"
-KVER=$(get_kernel_version "$ARM")
+BRANCH=$(arm_branch "$ARM")
+DESC=$(arm_desc "$ARM")
 
 info "=========================================="
 info "Building ARM $ARM: $DESC"
 info "Branch: $BRANCH"
-info "Kernel version: $KVER"
 info "Config: $CONFIG_FILE"
 info "Jobs: $BUILD_JOBS"
 info "=========================================="
@@ -39,8 +38,20 @@ info "Checking out branch $BRANCH..."
 git checkout "$BRANCH"
 
 # Verify branch state
-CURRENT_COMMIT=$(git rev-parse --short HEAD)
+CURRENT_COMMIT=$(git rev-parse HEAD)
 info "Building from commit: $CURRENT_COMMIT"
+if [ "$ARM" = E ]; then
+    if [ "$(git rev-parse HEAD^{tree})" != "$EXPECTED_V2_TREE" ]; then
+        error "Arm E source tree does not match $EXPECTED_V2_TREE"
+        exit 1
+    fi
+else
+    EXPECTED_COMMIT=$(arm_expected_commit "$ARM")
+    if [ "$CURRENT_COMMIT" != "$EXPECTED_COMMIT" ]; then
+        error "Arm $ARM must be exact commit $EXPECTED_COMMIT"
+        exit 1
+    fi
+fi
 
 # Prepare config
 if [ ! -f "$CONFIG_FILE" ]; then
@@ -60,15 +71,28 @@ sed -i 's/.*CONFIG_LOCALVERSION_AUTO=.*/CONFIG_LOCALVERSION_AUTO=y/' .config
 
 # Update config for new kernel version
 make olddefconfig 2>&1 | tail -3
+KVER=$(make -s kernelrelease)
+info "Kernel version: $KVER"
 
 # Verify key options
 info "Verifying key config options..."
 for opt in CONFIG_SWAP CONFIG_ZRAM CONFIG_MEMCG CONFIG_TRANSPARENT_HUGEPAGE; do
-    val=$(grep "^${opt}=" .config || echo "NOT_FOUND")
+    val=$(grep "^${opt}=" .config || true)
     case "$opt" in
-        CONFIG_ZRAM) info "  $opt=$val (expected: m or y)" ;;
-        *) info "  $opt=$val (expected: y)" ;;
+        CONFIG_ZRAM)
+            echo "$val" | grep -Eq '^CONFIG_ZRAM=[my]$' || {
+                error "$opt is not enabled: ${val:-NOT_FOUND}"
+                exit 1
+            }
+            ;;
+        *)
+            [ "$val" = "$opt=y" ] || {
+                error "$opt is not enabled: ${val:-NOT_FOUND}"
+                exit 1
+            }
+            ;;
     esac
+    info "  $val"
 done
 
 # Build kernel
@@ -125,11 +149,14 @@ BUILD_META="$RESULT_DIR/build-arm-${ARM}-meta.txt"
     echo "arm=$ARM"
     echo "branch=$BRANCH"
     echo "commit=$CURRENT_COMMIT"
+    echo "tree=$(git rev-parse HEAD^{tree})"
     echo "kernel_version=$KVER"
     echo "config=$CONFIG_FILE"
+    echo "config_sha256=$(sha256sum .config | awk '{print $1}')"
     echo "jobs=$BUILD_JOBS"
     echo "build_log=$BUILD_LOG"
     echo "boot_image=$BOOT_IMAGE"
+    echo "boot_image_sha256=$(sha256sum "$BOOT_IMAGE" | awk '{print $1}')"
     echo "build_date=$(date -Iseconds)"
 } > "$BUILD_META"
 
