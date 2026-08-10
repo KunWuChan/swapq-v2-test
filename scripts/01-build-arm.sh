@@ -37,15 +37,17 @@ cd "$KERNEL_SRC"
 info "Checking out branch $BRANCH..."
 git checkout "$BRANCH"
 
-# Verify branch state
+# Verify exact comparison identity.  A and D retain exact commit identity;
+# rebuilt B/C/E may have different committer dates, so their source trees are
+# the authoritative identity.
 CURRENT_COMMIT=$(git rev-parse HEAD)
 info "Building from commit: $CURRENT_COMMIT"
-if [ "$ARM" = E ]; then
-    if [ "$(git rev-parse HEAD^{tree})" != "$EXPECTED_V2_TREE" ]; then
-        error "Arm E source tree does not match $EXPECTED_V2_TREE"
-        exit 1
-    fi
-else
+EXPECTED_TREE=$(arm_expected_tree "$ARM")
+if [ "$(git rev-parse HEAD^{tree})" != "$EXPECTED_TREE" ]; then
+    error "Arm $ARM source tree does not match $EXPECTED_TREE"
+    exit 1
+fi
+if [ "$ARM" = A ] || [ "$ARM" = D ]; then
     EXPECTED_COMMIT=$(arm_expected_commit "$ARM")
     if [ "$CURRENT_COMMIT" != "$EXPECTED_COMMIT" ]; then
         error "Arm $ARM must be exact commit $EXPECTED_COMMIT"

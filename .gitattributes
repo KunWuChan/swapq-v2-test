@@ -1,0 +1,5 @@
+# Mail patches contain literal nested diff lines.  Do not treat the payload's
+# whitespace as whitespace introduced into this test-infrastructure repository.
+patches/*.patch -whitespace
+patches-v1/*.patch -whitespace
+*.bundle binary

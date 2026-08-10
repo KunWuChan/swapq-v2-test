@@ -8,6 +8,8 @@ set -euo pipefail
 TEST_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 KERNEL_SRC=${KERNEL_SRC:-/home/chentao/mm}
 PATCH_DIR=${PATCH_DIR:-$TEST_DIR/patches}
+V1_PATCH_DIR=${V1_PATCH_DIR:-$TEST_DIR/patches-v1}
+BASE_BUNDLE=${BASE_BUNDLE:-$TEST_DIR/bundles/swapq-v2-base-from-v1-base.bundle}
 RESULT_DIR=${RESULT_DIR:-$TEST_DIR/results}
 CONFIG_DIR=${CONFIG_DIR:-$TEST_DIR/configs}
 SCRIPT_DIR="$TEST_DIR/scripts"
@@ -19,6 +21,11 @@ EXPECTED_V2_TREE=${EXPECTED_V2_TREE:-e41508faa11f60c1d4cf73051a0a9e38534352d5}
 V1_BEFORE_COMMIT=${V1_BEFORE_COMMIT:-bdc38bfc1262e3d1432afadd2aa2ffd83d139dbb}
 V1_PATCH8_COMMIT=${V1_PATCH8_COMMIT:-4a7d8bd1b6644d139f5aa9074141437aa3b060a3}
 V1_PATCH13_COMMIT=${V1_PATCH13_COMMIT:-a438694aa41a39aaaa23926e14d7560c147f6af3}
+V1_BEFORE_TREE=${V1_BEFORE_TREE:-57ee9934fd5312d2d89d51806206d772ae784e4a}
+V1_PATCH8_TREE=${V1_PATCH8_TREE:-8597824ce792d0f77b2e06674f69e93e3e2d0a3b}
+V1_PATCH13_TREE=${V1_PATCH13_TREE:-d03738f4dbd68439c82db25078ec0bcb584f7735}
+BASE_TREE=${BASE_TREE:-0dd2a1e02d48d4689ef2a46c7f3797927cdcf9ef}
+BASE_BUNDLE_SHA256=${BASE_BUNDLE_SHA256:-adf3a20e597d6ead3a459158c1ffb4fecd2cd628bf233b1049f44c23f2de1c9a}
 
 # ARM definitions
 # These are set up by 00-apply-patches.sh:
@@ -52,12 +59,32 @@ arm_desc() {
 arm_expected_commit() {
     case "$1" in
         A) echo "$V1_BEFORE_COMMIT" ;;
-        B) echo "$V1_PATCH8_COMMIT" ;;
-        C) echo "$V1_PATCH13_COMMIT" ;;
         D) echo "$BASE_COMMIT" ;;
-        E) return 1 ;;
+        B|C|E) return 1 ;;
         *) return 1 ;;
     esac
+}
+
+arm_expected_tree() {
+    case "$1" in
+        A) echo "$V1_BEFORE_TREE" ;;
+        B) echo "$V1_PATCH8_TREE" ;;
+        C) echo "$V1_PATCH13_TREE" ;;
+        D) echo "$BASE_TREE" ;;
+        E) echo "$EXPECTED_V2_TREE" ;;
+        *) return 1 ;;
+    esac
+}
+
+sha256_file() {
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$1" | awk '{ print $1 }'
+    elif command -v shasum >/dev/null 2>&1; then
+        shasum -a 256 "$1" | awk '{ print $1 }'
+    else
+        error "Neither sha256sum nor shasum is available"
+        return 1
+    fi
 }
 
 # Build settings (override via env)

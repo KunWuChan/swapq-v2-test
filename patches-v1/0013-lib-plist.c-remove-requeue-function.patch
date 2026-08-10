@@ -1,0 +1,116 @@
+From a438694aa41a39aaaa23926e14d7560c147f6af3 Mon Sep 17 00:00:00 2001
+From: Kairui Song <kasong@tencent.com>
+Date: Tue, 14 Jul 2026 01:25:51 +0800
+Subject: [PATCH 13/13] lib/plist.c: remove requeue function
+
+Now the last user of plist requeue is gone, this function can be
+removed.
+
+Signed-off-by: Kairui Song <kasong@tencent.com>
+---
+ include/linux/plist.h |  2 --
+ lib/plist.c           | 64 -------------------------------------------
+ 2 files changed, 66 deletions(-)
+
+diff --git a/include/linux/plist.h b/include/linux/plist.h
+index 16cf4355b5c1..73d359c1a053 100644
+--- a/include/linux/plist.h
++++ b/include/linux/plist.h
+@@ -132,8 +132,6 @@ static inline void plist_node_init(struct plist_node *node, int prio)
+ extern void plist_add(struct plist_node *node, struct plist_head *head);
+ extern void plist_del(struct plist_node *node, struct plist_head *head);
+ 
+-extern void plist_requeue(struct plist_node *node, struct plist_head *head);
+-
+ /**
+  * plist_for_each - iterate over the plist
+  * @pos:	the type * to use as a loop counter
+diff --git a/lib/plist.c b/lib/plist.c
+index a5bef38add43..b05ae7ffea87 100644
+--- a/lib/plist.c
++++ b/lib/plist.c
+@@ -142,58 +142,6 @@ void plist_del(struct plist_node *node, struct plist_head *head)
+ 	plist_check_head(head);
+ }
+ 
+-/**
+- * plist_requeue - Requeue @node at end of same-prio entries.
+- *
+- * This is essentially an optimized plist_del() followed by
+- * plist_add().  It moves an entry already in the plist to
+- * after any other same-priority entries.
+- *
+- * @node:	&struct plist_node pointer - entry to be moved
+- * @head:	&struct plist_head pointer - list head
+- */
+-void plist_requeue(struct plist_node *node, struct plist_head *head)
+-{
+-	struct plist_node *iter;
+-	struct list_head *node_next = &head->node_list;
+-
+-	plist_check_head(head);
+-	BUG_ON(plist_head_empty(head));
+-	BUG_ON(plist_node_empty(node));
+-
+-	if (node == plist_last(head))
+-		return;
+-
+-	iter = plist_next(node);
+-
+-	if (node->prio != iter->prio)
+-		return;
+-
+-	plist_del(node, head);
+-
+-	/*
+-	 * After plist_del(), iter is the replacement of the node.  If the node
+-	 * was on prio_list, take shortcut to find node_next instead of looping.
+-	 */
+-	if (!list_empty(&iter->prio_list)) {
+-		iter = list_entry(iter->prio_list.next, struct plist_node,
+-				  prio_list);
+-		node_next = &iter->node_list;
+-		goto queue;
+-	}
+-
+-	plist_for_each_continue(iter, head) {
+-		if (node->prio != iter->prio) {
+-			node_next = &iter->node_list;
+-			break;
+-		}
+-	}
+-queue:
+-	list_add_tail(&node->node_list, node_next);
+-
+-	plist_check_head(head);
+-}
+-
+ #ifdef CONFIG_DEBUG_PLIST
+ #include <linux/sched.h>
+ #include <linux/sched/clock.h>
+@@ -231,14 +179,6 @@ static void __init plist_test_check(int nr_expect)
+ 	BUG_ON(prio_pos->prio_list.next != &first->prio_list);
+ }
+ 
+-static void __init plist_test_requeue(struct plist_node *node)
+-{
+-	plist_requeue(node, &test_head);
+-
+-	if (node != plist_last(&test_head))
+-		BUG_ON(node->prio == plist_next(node)->prio);
+-}
+-
+ static int  __init plist_test(void)
+ {
+ 	int nr_expect = 0, i, loop;
+@@ -262,10 +202,6 @@ static int  __init plist_test(void)
+ 			nr_expect--;
+ 		}
+ 		plist_test_check(nr_expect);
+-		if (!plist_node_empty(test_node + i)) {
+-			plist_test_requeue(test_node + i);
+-			plist_test_check(nr_expect);
+-		}
+ 	}
+ 
+ 	for (i = 0; i < ARRAY_SIZE(test_node); i++) {

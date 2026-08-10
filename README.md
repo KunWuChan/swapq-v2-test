@@ -14,8 +14,9 @@ ssh root@kp-server
 cd /home/chentao/swapq-v2-test
 KERNEL_SRC=/home/chentao/mm bash scripts/99-verify-env.sh
 
-# 2. Create exact A-E branches.  The v1 objects must already be present;
-#    this script performs no download.  Fuzzy application is prohibited.
+# 2. Create verified A-E branches without network access.  Arm A must exist;
+#    B/C can be rebuilt from patches-v1, and missing D is imported from bundle.
+#    Fuzzy/manual application is prohibited.
 KERNEL_SRC=/home/chentao/mm bash scripts/00-apply-patches.sh
 
 # 3. Copy kernel config
@@ -47,11 +48,15 @@ bash scripts/05-collect-results.sh --compare
 
 ```
 swapq-v2-test/
-├── patches/               # 13 kernel patches extracted from swap.txt
+├── patches-v1/            # original v1 13-patch stack (A -> B -> C)
+├── patches/               # reviewed v2 13-patch stack (D -> E)
 │   ├── 0001-*.patch
 │   ├── 0002-*.patch
 │   ├── ...
 │   └── 0013-*.patch
+├── bundles/
+│   └── swapq-v2-base-from-v1-base.bundle # exact Arm D incremental objects
+├── ARTIFACTS.sha256       # bundle and both patch stacks
 ├── configs/               # Kernel build configs
 │   └── base.config        # Copy from /boot/config-$(uname -r)
 ├── scripts/
@@ -73,17 +78,16 @@ swapq-v2-test/
 
 | Arm | Branch | Description |
 |-----|--------|-------------|
-| A | swapq-v1-before | v1 parent `bdc38bfc1262` |
-| B | swapq-v1-patch8 | v1 through patch 8 `4a7d8bd1b664` |
-| C | swapq-v1-patch13 | complete v1 `a438694aa41a` |
-| D | swapq-v2-base | exact v2 base `94f9b3980dd4` |
-| E | swapq-v2 | D + 13 swap priority queue v2 patches |
+| A | swapq-v1-before | exact commit `bdc38bfc1262`, tree `57ee9934fd53` |
+| B | swapq-v1-patch8 | v1 through patch 8, tree `8597824ce792` |
+| C | swapq-v1-patch13 | v1 through patch 13, tree `d03738f4dbd6` |
+| D | swapq-v2-base | exact commit `94f9b3980dd4`, tree `0dd2a1e02d48` |
+| E | swapq-v2 | D + 13 v2 patches, tree `e41508faa11f` |
 
-Arm E must have Git tree
-`e41508faa11f60c1d4cf73051a0a9e38534352d5`, matching reviewed v2 tip
-`d5c8964cf19f`.  Commit IDs created by `git am` may differ because the local
-committer date differs; the source tree and preserved patch authors/trailers
-are the comparison identity.
+Arms A and D are immutable base commits.  B/C/E may be rebuilt with `git am`,
+so their resulting commit IDs can differ with the committer date; their exact
+source trees and preserved patch authors/trailers are the comparison identity.
+Arm E matches reviewed v2 tip `d5c8964cf19f` by source tree.
 
 A/B/C form the v1 progression.  D/E form the clean v2 attribution pair.
 Because the v1 and v2 base histories differ, an A/C versus D/E comparison may
@@ -120,15 +124,30 @@ The original 1536 MiB × 32 workload plus twelve memory-backed block devices
 requires a sufficiently large server.  Smaller values are synthetic scaled
 tests and must be labelled as such.
 
-## Exact Base Requirement
+## Offline Reproduction and Exact Bases
 
-The v1 checkpoints and v2 base are fixed by the commit IDs in the table.  The
-colleague's kernel repository is expected to contain those objects already;
-the scripts do not fetch or download them.  The v2 patches are based on
-`94f9b3980dd4`, even if rebased mm-unstable no longer has a branch pointing at
-it.  Import the exact objects into the local repository first.
-`00-apply-patches.sh` refuses a moving base, a dirty tree, a fuzzy/manual
-application, an incomplete patch count, or a mismatched final source tree.
+The colleague's kernel repository needs the existing Arm A commit and its
+history.  Everything else needed to reproduce the matrix is checked into this
+repository:
+
+- `patches-v1/` rebuilds B after patch 8 and C after patch 13;
+- `bundles/swapq-v2-base-from-v1-base.bundle` supplies D if the rebased
+  kernel.org repository no longer advertises `94f9b3980dd4`;
+- `patches/` rebuilds E from D.
+
+The D bundle is a 3.5 MiB incremental Git bundle whose prerequisites are
+reachable from the exact A history.  `00-apply-patches.sh` verifies its
+SHA-256 and Git prerequisites before importing it.  It then checks exact base
+commits, exact source trees, patch counts and `git diff --check`.  No network
+fetch, moving-base substitution, fuzzy application or manual fixup is allowed.
+
+To inspect the artifacts independently:
+
+```sh
+sha256sum -c ARTIFACTS.sha256
+git -C /home/chentao/mm bundle verify \
+  "$PWD/bundles/swapq-v2-base-from-v1-base.bundle"
+```
 
 ## CPU Migration and Ring Mutation
 
