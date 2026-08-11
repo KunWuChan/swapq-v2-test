@@ -24,7 +24,7 @@ mkdir -p configs results
 cp /boot/config-$(uname -r) configs/base.config
 # Or: zcat /proc/config.gz > configs/base.config
 
-# 4. Build the required arms (use the same config for every arm)
+# 4. Build the required arms sequentially (same input config, isolated O= dirs)
 for arm in A B C D E; do bash scripts/01-build-arm.sh "$arm"; done
 
 # 5. Test Arm E
@@ -112,6 +112,13 @@ Optionally set `KERNEL_SRC_SHA256` to make the script verify it.  ZRAM defaults
 to eight devices of 8 GiB each (`ZRAM_DEVICE_SIZE=8G`), for 64 GiB total logical
 swap.  Archives with a top-level source directory use the default
 `KERNEL_ARCHIVE_STRIP_COMPONENTS=1`; set it to `0` only for a flat archive.
+
+Kernel-under-test builds use independent output directories under
+`BUILD_ROOT` (default `/home/chentao/swapq-build/arm-{A..E}`).  Objects,
+generated headers and `.config` are never shared between arms.  The build
+script refuses tracked source changes, less than 20 GiB free in the build
+filesystem, or less than 1 GiB free on `/boot`; override the thresholds only
+after checking the server with `MIN_BUILD_FREE_GIB` and `MIN_BOOT_FREE_MIB`.
 
 BRD has no implicit scaled default.  Set both sizes explicitly, for example:
 

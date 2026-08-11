@@ -6,6 +6,7 @@ set -euo pipefail
 . "$(dirname "$0")/lib-common.sh"
 
 check_host
+[ "$(id -u)" -eq 0 ] || { error "Kernel build/install must run as root"; exit 1; }
 
 ARM="${1:-}"
 if [ -z "$ARM" ] || ! arm_branch "$ARM" >/dev/null 2>&1; then
@@ -22,16 +23,23 @@ fi
 
 BRANCH=$(arm_branch "$ARM")
 DESC=$(arm_desc "$ARM")
+BUILD_DIR="$BUILD_ROOT/arm-$ARM"
 
 info "=========================================="
 info "Building ARM $ARM: $DESC"
 info "Branch: $BRANCH"
 info "Config: $CONFIG_FILE"
+info "Output: $BUILD_DIR"
 info "Jobs: $BUILD_JOBS"
 info "=========================================="
 
 check_kernel_src
 cd "$KERNEL_SRC"
+
+git diff --quiet && git diff --cached --quiet || {
+    error "Kernel source has tracked changes; refusing to build a comparison arm"
+    exit 1
+}
 
 # Checkout the branch
 info "Checking out branch $BRANCH..."
@@ -62,24 +70,36 @@ if [ ! -f "$CONFIG_FILE" ]; then
     error "Or: cp /boot/config-\$(uname -r) $CONFIG_FILE"
     exit 1
 fi
+CONFIG_FILE=$(cd "$(dirname "$CONFIG_FILE")" && pwd)/$(basename "$CONFIG_FILE")
+
+mkdir -p "$BUILD_DIR"
+build_free_kib=$(df -Pk "$BUILD_DIR" | awk 'NR == 2 { print $4 }')
+boot_free_kib=$(df -Pk /boot | awk 'NR == 2 { print $4 }')
+if [ "$build_free_kib" -lt "$((MIN_BUILD_FREE_GIB * 1024 * 1024))" ]; then
+    error "Less than ${MIN_BUILD_FREE_GIB} GiB is free for $BUILD_DIR"
+    exit 1
+fi
+if [ "$boot_free_kib" -lt "$((MIN_BOOT_FREE_MIB * 1024))" ]; then
+    error "Less than ${MIN_BOOT_FREE_MIB} MiB is free on /boot"
+    exit 1
+fi
 
 info "Preparing kernel config..."
-cp "$CONFIG_FILE" .config
+cp "$CONFIG_FILE" "$BUILD_DIR/.config"
 
 # Set local version to identify this ARM
-sed -i "s/^CONFIG_LOCALVERSION=.*/CONFIG_LOCALVERSION=\"-swapq-${ARM}\"/" .config
-# Also use CONFIG_LOCALVERSION_AUTO for git describe
-sed -i 's/.*CONFIG_LOCALVERSION_AUTO=.*/CONFIG_LOCALVERSION_AUTO=y/' .config
+scripts/config --file "$BUILD_DIR/.config" --set-str LOCALVERSION "-swapq-${ARM}"
+scripts/config --file "$BUILD_DIR/.config" --enable LOCALVERSION_AUTO
 
 # Update config for new kernel version
-make olddefconfig 2>&1 | tail -3
-KVER=$(make -s kernelrelease)
+make O="$BUILD_DIR" olddefconfig 2>&1 | tail -3
+KVER=$(make -s O="$BUILD_DIR" kernelrelease)
 info "Kernel version: $KVER"
 
 # Verify key options
 info "Verifying key config options..."
 for opt in CONFIG_SWAP CONFIG_ZRAM CONFIG_MEMCG CONFIG_TRANSPARENT_HUGEPAGE; do
-    val=$(grep "^${opt}=" .config || true)
+    val=$(grep "^${opt}=" "$BUILD_DIR/.config" || true)
     case "$opt" in
         CONFIG_ZRAM)
             echo "$val" | grep -Eq '^CONFIG_ZRAM=[my]$' || {
@@ -102,7 +122,7 @@ info "Building kernel (this will take a while)..."
 BUILD_LOG="$RESULT_DIR/build-arm-${ARM}-$(date +%Y%m%d-%H%M%S).log"
 mkdir -p "$RESULT_DIR"
 
-make -j"$BUILD_JOBS" 2>&1 | tee "$BUILD_LOG"
+make O="$BUILD_DIR" -j"$BUILD_JOBS" 2>&1 | tee "$BUILD_LOG"
 if [ "${PIPESTATUS[0]}" -ne 0 ]; then
     error "Kernel build FAILED. Log: $BUILD_LOG"
     exit 1
@@ -111,11 +131,11 @@ info "Kernel build OK"
 
 # Install modules
 info "Installing modules..."
-make modules_install 2>&1 | tail -5
+make O="$BUILD_DIR" modules_install 2>&1 | tail -5
 
 # Install kernel
 info "Installing kernel..."
-make install 2>&1 | tail -5
+make O="$BUILD_DIR" install 2>&1 | tail -5
 
 # Verify installation
 BOOT_IMAGE="/boot/vmlinuz-${KVER}"
@@ -154,11 +174,14 @@ BUILD_META="$RESULT_DIR/build-arm-${ARM}-meta.txt"
     echo "tree=$(git rev-parse HEAD^{tree})"
     echo "kernel_version=$KVER"
     echo "config=$CONFIG_FILE"
-    echo "config_sha256=$(sha256sum .config | awk '{print $1}')"
+    echo "config_sha256=$(sha256_file "$BUILD_DIR/.config")"
+    echo "build_dir=$BUILD_DIR"
+    echo "build_dir_filesystem_free_kib_before=$build_free_kib"
+    echo "boot_filesystem_free_kib_before=$boot_free_kib"
     echo "jobs=$BUILD_JOBS"
     echo "build_log=$BUILD_LOG"
     echo "boot_image=$BOOT_IMAGE"
-    echo "boot_image_sha256=$(sha256sum "$BOOT_IMAGE" | awk '{print $1}')"
+    echo "boot_image_sha256=$(sha256_file "$BOOT_IMAGE")"
     echo "build_date=$(date -Iseconds)"
 } > "$BUILD_META"
 

@@ -13,6 +13,7 @@ BASE_BUNDLE=${BASE_BUNDLE:-$TEST_DIR/bundles/swapq-v2-base-from-v1-base.bundle}
 RESULT_DIR=${RESULT_DIR:-$TEST_DIR/results}
 CONFIG_DIR=${CONFIG_DIR:-$TEST_DIR/configs}
 SCRIPT_DIR="$TEST_DIR/scripts"
+BUILD_ROOT=${BUILD_ROOT:-/home/chentao/swapq-build}
 
 # Exact comparison points.  Never silently move Arm D to a newer rebased
 # mm-unstable commit: doing so makes the D/E attribution invalid.
@@ -102,6 +103,8 @@ cpu_count() {
 
 BUILD_JOBS=${BUILD_JOBS:-$(cpu_count)}
 KERNEL_CONFIG=${KERNEL_CONFIG:-$CONFIG_DIR/base.config}
+MIN_BUILD_FREE_GIB=${MIN_BUILD_FREE_GIB:-20}
+MIN_BOOT_FREE_MIB=${MIN_BOOT_FREE_MIB:-1024}
 
 # Test settings
 ZRAM_DEVICES=${ZRAM_DEVICES:-8}
