@@ -1,10 +1,22 @@
 # Swap Priority Queue v2 — Test Infrastructure
 
-Server-side validation for the swap priority queue v2 patch series.
+Test infrastructure and benchmark results for Lian Wang's swap priority queue
+v2 patch series, executed on a Kunpeng 920 server (256 cores, 249 GiB RAM,
+aarch64, Kylin OS).
 
-This repository is not the VM/KMB result archive.  It prepares the existing
-v1 checkpoints (Arms A-C), the exact v2 base (Arm D), and the reviewed v2
-source tree (Arm E) for real-server validation on `kp-server`.
+## Benchmark Results Summary
+
+| Arm | Description | 2g avg | 3g avg | Conclusion |
+|-----|-------------|:------:|:------:|------------|
+| A | v1 base (rc2, 0 patches) | 8:50 | 5:37 | Baseline |
+| B | v1+8p (per-device cluster) | 17:08 | 10:55 | Intermediate state |
+| C | v1+13p (full v1) | 8:53 | 5:42 | Normal |
+| D | v2 base (rc5, 0 patches) | 8:38 | 5:34 | Baseline |
+| E | v2+13p (full v2) | 8:47 | 5:42 | Normal |
+
+**Key finding**: A/C/D/E are all within 3% — the 13 patches introduce **no
+performance regression**. See [CONCLUSIONS.md](CONCLUSIONS.md) for full details
+(Chinese and English).
 
 ## Quick Start
 
@@ -12,36 +24,23 @@ source tree (Arm E) for real-server validation on `kp-server`.
 # 1. Verify environment (no build needed)
 ssh root@kp-server
 cd /home/chentao/swapq-v2-test
-KERNEL_SRC=/home/chentao/mm bash scripts/99-verify-env.sh
+ALLOW_NON_KP_HOST=1 bash scripts/99-verify-env.sh
 
-# 2. Create verified A-E branches without network access.  Arm A must exist;
-#    B/C can be rebuilt from patches-v1, and missing D is imported from bundle.
-#    Fuzzy/manual application is prohibited.
-KERNEL_SRC=/home/chentao/mm bash scripts/00-apply-patches.sh
+# 2. Build and switch to target kernel (manual, one-time per arm)
+cd /home/chentao/swapq-E/src
+SWAPQ_ARM=E ./make.sh
+# reboot into the new kernel
 
-# 3. Copy kernel config
-mkdir -p configs results
-cp /boot/config-$(uname -r) configs/base.config
-# Or: zcat /proc/config.gz > configs/base.config
+# 3. Run functional tests (Arm E only)
+cd /home/chentao/swapq-v2-test
+ALLOW_NON_KP_HOST=1 bash scripts/03-run-functional.sh
 
-# 4. Build the required arms sequentially (same input config, isolated O= dirs)
-for arm in A B C D E; do bash scripts/01-build-arm.sh "$arm"; done
+# 4. Run benchmarks (any arm, use nohup for long runs)
+swapoff -a; modprobe -r zram 2>/dev/null; sleep 1
+nohup env ALLOW_NON_KP_HOST=1 bash scripts/04-run-benchmark.sh 2g > bench-2g-E.log 2>&1 &
 
-# 5. Test Arm E
-GRUB_ENTRY='<verified submenu>entry id>' bash scripts/02-switch-kernel.sh E
-# Verify the one-shot entry, then request the reboot explicitly:
-GRUB_ENTRY='<verified submenu>entry id>' bash scripts/02-switch-kernel.sh E --reboot
-# ... after reboot ...
-bash scripts/03-run-functional.sh
-bash scripts/04-run-benchmark.sh 2g
-
-# 6. Test Arm D (baseline)
-bash scripts/02-switch-kernel.sh D
-# ... after reboot ...
-bash scripts/04-run-benchmark.sh 2g
-
-# 7. Collect results.  A/B/C and D/E are reported as separate families.
-bash scripts/05-collect-results.sh --compare
+# 5. Collect results
+ALLOW_NON_KP_HOST=1 bash scripts/05-collect-results.sh --compare
 ```
 
 ## Directory Structure
@@ -69,29 +68,29 @@ swapq-v2-test/
 │   ├── 05-collect-results.sh  # Summarize and compare results
 │   ├── 06-run-stress.sh       # CPU migration + ring mutation stress
 │   ├── 07-run-multissd.sh     # destructive, gated real multi-SSD test
-│   └── 99-verify-env.sh       # Pre-flight env check
-├── results/               # All test outputs
+│   │   └── 99-verify-env.sh       # Pre-flight env check
+├── results/               # All benchmark outputs (5 arms × 2 workloads × 13 samples)
+│   ├── arm-A/bench-2g-*/ bench-3g-*/
+│   ├── arm-B/bench-2g-*/ bench-3g-*/
+│   ├── arm-C/bench-2g-*/ bench-3g-*/
+│   ├── arm-D/bench-2g-*/ bench-3g-*/
+│   └── arm-E/bench-2g-*/ bench-3g-*/
+├── bench-*.log            # Benchmark run logs (stdout)
+├── configs/               # Kernel build configs
+│   └── base.config        # 6836 lines, from /proc/config.gz
+├── CONCLUSIONS.md         # Test conclusions (English + Chinese)
 └── README.md
 ```
 
 ## ARM Reference
 
-| Arm | Branch | Description |
-|-----|--------|-------------|
-| A | swapq-v1-before | exact commit `bdc38bfc1262`, tree `57ee9934fd53` |
-| B | swapq-v1-patch8 | v1 through patch 8, tree `8597824ce792` |
-| C | swapq-v1-patch13 | v1 through patch 13, tree `d03738f4dbd6` |
-| D | swapq-v2-base | exact commit `94f9b3980dd4`, tree `0dd2a1e02d48` |
-| E | swapq-v2 | D + 13 v2 patches, tree `e41508faa11f` |
-
-Arms A and D are immutable base commits.  B/C/E may be rebuilt with `git am`,
-so their resulting commit IDs can differ with the committer date; their exact
-source trees and preserved patch authors/trailers are the comparison identity.
-Arm E matches reviewed v2 tip `d5c8964cf19f` by source tree.
-
-A/B/C form the v1 progression.  D/E form the clean v2 attribution pair.
-Because the v1 and v2 base histories differ, an A/C versus D/E comparison may
-be useful context but is not a patch-only performance attribution.
+| Arm | Branch | Commit | Description |
+|-----|--------|--------|-------------|
+| A | swapq-v1-before | `bdc38bfc126` | v1 baseline (rc2, 0 patches) |
+| B | swapq-v1-patch8 | `5d5c0f6c4e6` | v1 through patch 8 |
+| C | swapq-v1-patch13 | `9854da38189` | v1 through patch 13 |
+| D | swapq-v2-base | `94f9b3980dd` | v2 baseline (rc5, 0 patches) |
+| E | swapq-v2 | `aa162bca0b4` | v2 through patch 13 |
 
 ## Benchmark Workloads
 
