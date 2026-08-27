@@ -61,9 +61,38 @@ samples per arm per workload.
 | D | v2 base (rc5, 0 patches) | 8:38 | 5:34 | Baseline |
 | E | v2+13p (full v2) | 8:47 | 5:42 | Normal |
 
-**Key finding**: A / C / D / E are all within 3% — the 13 patches introduce
-**no performance regression**. See [CONCLUSIONS.md](CONCLUSIONS.md) for full
-details (English and Chinese).
+**Key finding**: A / C / D / E are all within 3% (2g: 2.9%, 3g: 2.4%) —
+the 13 patches introduce **no performance regression**. See
+[CONCLUSIONS.md](CONCLUSIONS.md) for full details (English and Chinese).
+
+### System Time (3g sample-01)
+
+| Arm | User time | System time | Sys/User |
+|-----|:---------:|:-----------:|:--------:|
+| A | 6771s | 22532s | 3.3x |
+| B | 6628s | 54392s | 8.2x |
+| D | 6824s | 22208s | 3.3x |
+| E | 6854s | 23204s | 3.4x |
+
+### Key Findings
+
+1. **No performance regression**: A, C, D, E are all within 3% (2g: 2.9%,
+   3g: 2.4%). The 13 swap priority queue v2 patches introduce no measurable
+   overhead on either baseline.
+
+2. **B is an intermediate state**: B has patches 1-8 (per-device percpu
+   cluster) but lacks patch 9 (priority queue). The per-device cluster
+   conflicts with the old plist-based allocation, causing 2.4x higher system
+   time (54392s vs ~22000s) while user time is similar (6628s vs ~6800s).
+   C (which has all 13 patches) runs normally, confirming patch 8 must be
+   used together with patch 9.
+
+3. **Functional correctness**: All 5 KMB tests passed on Arm E. 600s stress
+   test passed. dmesg clean throughout.
+
+4. **v1/v2 baselines equivalent**: A (rc2) vs D (rc5) differ by 2.3% (2g),
+   confirming kernel changes between rc2 and rc5 do not affect swap
+   performance.
 
 ## Directory Structure
 
