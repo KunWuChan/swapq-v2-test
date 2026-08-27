@@ -23,7 +23,20 @@
     A → C: v1 patch attribution (does adding all 13 patches regress?)
     D → E: v2 patch attribution (does adding all 13 patches regress?)
     B:     intermediate state (patch 8 without patch 9 causes conflict)
-    A vs D: NOT comparable (different kernel versions: rc2 vs rc5)
+    A vs D: different kernel versions (rc2 vs rc5), not a patch attribution
+            comparison. Useful as context, but does not isolate the patch effect.
+```
+
+**Simplified view** (for email):
+
+```
+v1 family (rc2):              v2 family (rc5):
+A: 0 patches (baseline)       D: 0 patches (baseline)
+  ↓ +8 patches                  ↓ +13 patches
+B: patches 1-8                E: full v2 (patches 1-13)
+  ↓ +5 patches
+C: patches 1-13 (full v1)
+```
 
   C = B + 5 core patches (9-13):
     patch 9:  priority queue for swap device allocation
