@@ -7,7 +7,7 @@ cd swapq-v2-test
 
 # 1. 分支和提交干净
 git log --oneline
-# 预期: 9 个提交，前 6 个是原版，后 3 个是我们的改动
+# 预期: 15 个提交，前 6 个是原版，后 9 个是我们的改动
 
 # 2. 所有 120 个 sample 都通过（exit=0, oom=0）
 grep -r "build_exit=0" results/arm-*/bench-*/sample-*/result.txt | wc -l
@@ -131,7 +131,7 @@ ls results/arm-D/bench-2g-*/sample-01/
 | 检查项 | 命令 | 预期 |
 |--------|------|------|
 | 分支干净 | `git status` | 无未跟踪文件 |
-| 提交数 | `git log --oneline \| wc -l` | 9 |
+| 提交数 | `git log --oneline \| wc -l` | 15 |
 | bench 日志 | `ls bench-*.log \| wc -l` | 10 |
 | 臂目录 | `ls -d results/arm-* \| wc -l` | 5 |
 | 每臂 2g samples | `ls results/arm-A/bench-2g-*/sample-*/ \| wc -l` | 12 |
@@ -142,4 +142,4 @@ ls results/arm-D/bench-2g-*/sample-01/
 | 配置行数 | `wc -l configs/base.config` | 6836 |
 | 脚本数 | `ls scripts/ \| wc -l` | 11 |
 | 补丁数 | `ls patches-v1/ \| wc -l` | 13 |
-| 文档数 | `ls *.md \| wc -l` | 4 |
+| 文档数 | `ls *.md \| wc -l` | 7 |

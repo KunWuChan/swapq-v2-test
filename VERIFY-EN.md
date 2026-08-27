@@ -7,7 +7,7 @@ cd swapq-v2-test
 
 # 1. Clean branch and commit history
 git log --oneline
-# Expected: 10 commits, first 6 are original, last 4 are our changes
+# Expected: 15 commits, first 6 are original, last 9 are our changes
 
 # 2. All 120 samples passed (exit=0, oom=0)
 grep -r "build_exit=0" results/arm-*/bench-*/sample-*/result.txt | wc -l
@@ -131,7 +131,7 @@ ls results/arm-D/bench-2g-*/sample-01/
 | Check | Command | Expected |
 |-------|---------|----------|
 | Clean branch | `git status` | No untracked files |
-| Commit count | `git log --oneline \| wc -l` | 10 |
+| Commit count | `git log --oneline \| wc -l` | 15 |
 | Bench logs | `ls bench-*.log \| wc -l` | 10 |
 | Arm directories | `ls -d results/arm-* \| wc -l` | 5 |
 | 2g samples per arm | `ls results/arm-A/bench-2g-*/sample-*/ \| wc -l` | 12 |
@@ -142,4 +142,4 @@ ls results/arm-D/bench-2g-*/sample-01/
 | Config lines | `wc -l configs/base.config` | 6836 |
 | Script count | `ls scripts/ \| wc -l` | 11 |
 | Patch count | `ls patches-v1/ \| wc -l` | 13 |
-| Doc count | `ls *.md \| wc -l` | 5 |
+| Doc count | `ls *.md \| wc -l` | 7 |
