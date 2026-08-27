@@ -133,36 +133,49 @@ info "Kernel build OK"
 info "Installing modules..."
 make O="$BUILD_DIR" modules_install 2>&1 | tail -5
 
-# Install kernel
-info "Installing kernel..."
-make O="$BUILD_DIR" install 2>&1 | tail -5
+BUILT_IMAGE="$BUILD_DIR/arch/arm64/boot/Image"
+[ -f "$BUILT_IMAGE" ] || BUILT_IMAGE="$BUILD_DIR/arch/arm64/boot/Image.gz"
 
-# Verify installation
-BOOT_IMAGE="/boot/vmlinuz-${KVER}"
-BOOT_INITRD="/boot/initramfs-${KVER}.img"
-BOOT_SYSTEM_MAP="/boot/System.map-${KVER}"
-
-if [ -f "$BOOT_IMAGE" ]; then
-    info "Boot image: $BOOT_IMAGE ($(du -h "$BOOT_IMAGE" | cut -f1))"
+if [ "${NO_INSTALL:-0}" = "1" ]; then
+    info "Skipping kernel install and grub update (NO_INSTALL=1)"
+    info "Kernel image: $BUILT_IMAGE"
+    info "Manual install steps:"
+    info "  cp $BUILT_IMAGE /boot/vmlinuz-$KVER"
+    info "  cp $BUILD_DIR/System.map /boot/System.map-$KVER"
+    info "  dracut /boot/initramfs-$KVER.img $KVER"
+    info "  grub2-mkconfig -o /boot/grub2/grub.cfg"
+    BOOT_IMAGE="(manual: $BUILT_IMAGE)"
+    BOOT_IMAGE_SHA="(skipped)"
 else
-    # Try to find the installed image
-    BOOT_IMAGE=$(ls -t /boot/vmlinuz-*swapq-${ARM}* 2>/dev/null | head -1)
-    if [ -z "$BOOT_IMAGE" ]; then
-        error "Cannot find installed kernel image for ARM $ARM"
-        error "Look for files in /boot containing 'swapq-${ARM}'"
-        exit 1
+    # Install kernel
+    info "Installing kernel..."
+    make O="$BUILD_DIR" install 2>&1 | tail -5
+
+    # Verify installation
+    BOOT_IMAGE="/boot/vmlinuz-${KVER}"
+
+    if [ -f "$BOOT_IMAGE" ]; then
+        info "Boot image: $BOOT_IMAGE ($(du -h "$BOOT_IMAGE" | cut -f1))"
+    else
+        BOOT_IMAGE=$(ls -t /boot/vmlinuz-*swapq-${ARM}* 2>/dev/null | head -1)
+        if [ -z "$BOOT_IMAGE" ]; then
+            error "Cannot find installed kernel image for ARM $ARM"
+            error "Look for files in /boot containing 'swapq-${ARM}'"
+            exit 1
+        fi
+        info "Boot image: $BOOT_IMAGE"
     fi
-    info "Boot image: $BOOT_IMAGE"
-fi
+    BOOT_IMAGE_SHA=$(sha256_file "$BOOT_IMAGE")
 
-# Update grub
-info "Updating grub..."
-if command -v grub2-mkconfig &>/dev/null; then
-    grub2-mkconfig -o /boot/grub2/grub.cfg 2>&1 | tail -3
-elif command -v update-grub &>/dev/null; then
-    update-grub 2>&1 | tail -3
-else
-    warn "Could not update grub automatically. Run: grub2-mkconfig -o /boot/grub2/grub.cfg"
+    # Update grub
+    info "Updating grub..."
+    if command -v grub2-mkconfig &>/dev/null; then
+        grub2-mkconfig -o /boot/grub2/grub.cfg 2>&1 | tail -3
+    elif command -v update-grub &>/dev/null; then
+        update-grub 2>&1 | tail -3
+    else
+        warn "Could not update grub automatically. Run: grub2-mkconfig -o /boot/grub2/grub.cfg"
+    fi
 fi
 
 # Save build metadata
@@ -176,12 +189,13 @@ BUILD_META="$RESULT_DIR/build-arm-${ARM}-meta.txt"
     echo "config=$CONFIG_FILE"
     echo "config_sha256=$(sha256_file "$BUILD_DIR/.config")"
     echo "build_dir=$BUILD_DIR"
+    echo "built_image=$BUILT_IMAGE"
     echo "build_dir_filesystem_free_kib_before=$build_free_kib"
     echo "boot_filesystem_free_kib_before=$boot_free_kib"
     echo "jobs=$BUILD_JOBS"
     echo "build_log=$BUILD_LOG"
     echo "boot_image=$BOOT_IMAGE"
-    echo "boot_image_sha256=$(sha256_file "$BOOT_IMAGE")"
+    echo "boot_image_sha256=$BOOT_IMAGE_SHA"
     echo "build_date=$(date -Iseconds)"
 } > "$BUILD_META"
 
@@ -189,10 +203,18 @@ info ""
 info "=========================================="
 info "ARM $ARM build complete!"
 info "Kernel: $KVER"
-info "Image:  $BOOT_IMAGE"
+info "Image:  $BUILT_IMAGE"
 info "Meta:   $BUILD_META"
 info "Log:    $BUILD_LOG"
 info ""
-info "To switch to this kernel:"
-info "  bash scripts/02-switch-kernel.sh $ARM"
+if [ "${NO_INSTALL:-0}" = "1" ]; then
+    info "Manual install:"
+    info "  cp $BUILT_IMAGE /boot/vmlinuz-$KVER"
+    info "  dracut /boot/initramfs-$KVER.img $KVER"
+    info "  grub2-mkconfig -o /boot/grub2/grub.cfg"
+    info "  grub2-reboot '<entry>' && reboot"
+else
+    info "To switch to this kernel:"
+    info "  bash scripts/02-switch-kernel.sh $ARM"
+fi
 info "=========================================="

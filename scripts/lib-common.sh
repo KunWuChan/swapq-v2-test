@@ -146,7 +146,7 @@ check_kernel_src() {
 detect_running_arm() {
     local kver
     kver=$(uname -r)
-    if [[ "$kver" =~ -swapq-([A-E])([^-A-Za-z0-9]|$) ]]; then
+    if [[ "$kver" =~ -swapq-([A-E])(-|$) ]]; then
         echo "${BASH_REMATCH[1]}"
     else
         echo "unknown"
@@ -231,7 +231,11 @@ setup_zram_swap() {
     local i
 
     info "Setting up $count zram devices (${device_size} each, $algo)"
-    modprobe zram 2>/dev/null || true
+    modprobe zram num_devices=$count 2>/dev/null || modprobe zram 2>/dev/null || true
+    if [ ! -b "/dev/zram$((count - 1))" ]; then
+        modprobe -r zram 2>/dev/null || true
+        modprobe zram num_devices=$count 2>/dev/null || true
+    fi
 
     for ((i = 0; i < count; i++)); do
         local dev="/dev/zram$i"

@@ -63,6 +63,8 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 swapoff -a
+modprobe -r zram 2>/dev/null || true
+modprobe zram num_devices=5 2>/dev/null || true
 setup_zram_swap 4 "$ZRAM_STRESS_SIZE"
 [ -b /dev/zram4 ] || { error "/dev/zram4 is required for ring churn"; exit 1; }
 echo 1 > /sys/block/zram4/reset 2>/dev/null || true

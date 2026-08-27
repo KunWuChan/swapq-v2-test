@@ -120,7 +120,11 @@ setup_zram_bench() {
     # Disable root swap
     swapoff -a
 
-    modprobe zram 2>/dev/null || true
+    modprobe zram num_devices=$count 2>/dev/null || modprobe zram 2>/dev/null || true
+    if [ ! -b "/dev/zram$((count - 1))" ]; then
+        modprobe -r zram 2>/dev/null || true
+        modprobe zram num_devices=$count 2>/dev/null || true
+    fi
 
     cleanup_zram_devices "$count"
     setup_zram_swap "$count" "$device_size" "$algo"
@@ -225,7 +229,7 @@ run_build_sample() {
         echo $$ > "$CG_PATH/cgroup.procs"
         exec "$@"
     ' _ /usr/bin/time -o "$sample_dir/time.txt" -v \
-        make -C "$src_dir" -j"$BUILD_JOBS_BENCH" defconfig bzImage modules \
+        make -C "$src_dir" -j"$BUILD_JOBS_BENCH" defconfig Image modules \
         > "$sample_dir/build.log" 2>&1 &
     build_pid=$!
     ACTIVE_BUILD_PID=$build_pid
