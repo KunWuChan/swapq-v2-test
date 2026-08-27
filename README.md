@@ -2,7 +2,7 @@
 
 Test infrastructure and benchmark results for Lian Wang's swap priority queue
 v2 patch series, executed on a Kunpeng 920 server (256 cores, 249 GiB RAM,
-aarch64, Kylin OS).
+aarch64).
 
 ## Overview
 

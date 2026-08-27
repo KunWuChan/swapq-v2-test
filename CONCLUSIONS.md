@@ -4,7 +4,7 @@
 
 ### Test Setup
 
-- **Server**: Kunpeng 920, 256 cores, 249 GiB RAM, aarch64, Kylin OS
+- **Server**: Kunpeng 920, 256 cores, 249 GiB RAM, aarch64
 - **Workload**: Kernel build under memory cgroup (2 GiB / 3 GiB), 8 ZRAM devices, `make -j96 defconfig Image modules`
 - **Method**: 1 warm-up + 12 measured samples per arm per workload
 
@@ -28,24 +28,34 @@
 | D (v2 base) | 8:38 | 5:34 | Baseline |
 | E (v2+13p) | 8:47 | 5:42 | Normal |
 
+### System Time (3g sample-01)
+
+| Arm | User time | System time | Sys/User |
+|-----|:---------:|:-----------:|:--------:|
+| A | 6771s | 22532s | 3.3x |
+| B | 6628s | 54392s | 8.2x |
+| D | 6824s | 22208s | 3.3x |
+| E | 6854s | 23204s | 3.4x |
+
 ### Key Findings
 
 1. **No performance regression from the 13 patches**: A/C/D/E are all within 3%
-   of each other, well within measurement noise. Adding the 13 swap priority
-   queue v2 patches does not degrade kernel build performance.
+   (2g: 2.9%, 3g: 2.4%). Adding the 13 swap priority queue v2 patches does not
+   degrade kernel build performance.
 
-2. **v1 and v2 baselines are equivalent**: A (rc2) vs D (rc5) differ by only
-   2.3%, confirming that kernel changes between rc2 and rc5 do not affect swap
-   performance.
-
-3. **B is an intermediate state, not a bug**: B has patches 1-8 (including
+2. **B is an intermediate state, not a bug**: B has patches 1-8 (including
    per-device percpu cluster) but lacks patch 9 (priority queue). The
    per-device cluster conflicts with the old plist-based allocation, causing
-   2.4x higher system time. C (which has all 13 patches including patch 9)
-   runs normally, confirming that patch 8 must be used together with patch 9.
+   2.4x higher system time (54392s vs ~22000s) while user time is similar
+   (6628s vs ~6800s). C (which has all 13 patches including patch 9) runs
+   normally, confirming that patch 8 must be used together with patch 9.
 
-4. **Functional correctness**: All 5 KMB tests passed on Arm E. Stress test
+3. **Functional correctness**: All 5 KMB tests passed on Arm E. Stress test
    (600s swapon/swapoff) passed. dmesg remained clean throughout.
+
+4. **v1 and v2 baselines are equivalent**: A (rc2) vs D (rc5) differ by only
+   2.3%, confirming that kernel changes between rc2 and rc5 do not affect swap
+   performance.
 
 ### Conclusion
 
@@ -59,7 +69,7 @@ RFC submission.
 
 ### 测试环境
 
-- **服务器**: Kunpeng 920, 256核, 249 GiB 内存, aarch64, Kylin OS
+- **服务器**: Kunpeng 920, 256核, 249 GiB 内存, aarch64
 - **负载**: 在内存 cgroup 限制下编译内核（2 GiB / 3 GiB），8 个 ZRAM 设备，`make -j96 defconfig Image modules`
 - **方法**: 每个臂每个负载 1 次预热 + 12 次测量
 
@@ -83,21 +93,31 @@ RFC submission.
 | D (v2 base) | 8:38 | 5:34 | 基线 |
 | E (v2+13p) | 8:47 | 5:42 | 正常 |
 
+### 内核态耗时对比 (3g sample-01)
+
+| 臂 | 用户态耗时 | 内核态耗时 | 内核/用户 |
+|----|:---------:|:---------:|:--------:|
+| A | 6771s | 22532s | 3.3x |
+| B | 6628s | 54392s | 8.2x |
+| D | 6824s | 22208s | 3.3x |
+| E | 6854s | 23204s | 3.4x |
+
 ### 关键发现
 
-1. **13 个补丁无性能退化**: A/C/D/E 四个臂的差异在 3% 以内，在测量噪声范围内。
+1. **13 个补丁无性能退化**: A/C/D/E 四个臂的差异在 3% 以内（2g: 2.9%, 3g: 2.4%）。
    添加 13 个 swap priority queue v2 补丁不会降低内核编译性能。
 
-2. **v1 和 v2 基线性能一致**: A (rc2) 与 D (rc5) 仅差 2.3%，说明 rc2 到 rc5
-   之间的内核改动不影响 swap 性能。
-
-3. **B 是设计上的中间态，不是 bug**: B 有补丁 1-8（含 per-device percpu cluster）
+2. **B 是设计上的中间态，不是 bug**: B 有补丁 1-8（含 per-device percpu cluster）
    但缺少补丁 9（priority queue）。per-device cluster 与老的 plist 分配机制
-   不兼容，导致 system time 增加 2.4 倍。C（有全部 13 个补丁，含补丁 9）运行正常，
-   确认补丁 8 必须配合补丁 9 使用。
+   不兼容，导致内核态耗时增加 2.4 倍（54392s vs ~22000s），而用户态耗时相近
+   （6628s vs ~6800s）。C（有全部 13 个补丁，含补丁 9）运行正常，确认补丁 8
+   必须配合补丁 9 使用。
 
-4. **功能正确性**: Arm E 上 5 项 KMB 功能测试全部通过。压力测试（600 秒 swapon/swapoff）
+3. **功能正确性**: Arm E 上 5 项 KMB 功能测试全部通过。压力测试（600 秒 swapon/swapoff）
    通过。dmesg 全程无异常。
+
+4. **v1 和 v2 基线性能一致**: A (rc2) 与 D (rc5) 仅差 2.3%，说明 rc2 到 rc5
+   之间的内核改动不影响 swap 性能。
 
 ### 结论
 

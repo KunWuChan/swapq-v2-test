@@ -14,7 +14,7 @@
 | D | `swapq-v2-base` | `/home/chentao/swapq-D/src` | `0dd2a1e02d48` |
 | E | `swapq-v2` | `/home/chentao/swapq-E/src` | `e41508faa11f` |
 
-对比规则：A→B→C 是 v1 家族递进；D→E 是 v2 纯补丁归因。两者 base 不同，不可混比。
+对比规则：A→C 是 v1 补丁归因；D→E 是 v2 补丁归因。B 是中间态验证。A 和 D 不同内核版本，非补丁归因对比。
 
 ---
 
