@@ -1,0 +1,459 @@
+[0;32m[INFO][0m  00:03:15 Running benchmark on ARM: B
+[0;32m[INFO][0m  00:03:15 Using kernel source archive: /root/linux.tar.xz
+[0;32m[INFO][0m  00:03:15 ==========================================
+[0;32m[INFO][0m  00:03:15 Benchmark: 3g
+[0;32m[INFO][0m  00:03:15 Kernel: 7.2.0-rc2-swapq-B-g5d5c0f6c4e6e
+[0;32m[INFO][0m  00:03:15 ARM: B
+[0;32m[INFO][0m  00:03:15 Warmup: 1, Measured: 12
+[0;32m[INFO][0m  00:03:15 Source: /root/linux.tar.xz
+[0;32m[INFO][0m  00:03:15 Results: /home/chentao/swapq-v2-test/results/arm-B/bench-3g-20260827-000315
+[0;32m[INFO][0m  00:03:15 ==========================================
+[0;32m[INFO][0m  00:03:15 === WARM-UP ===
+=== SWAPQ_BENCH_SAMPLE_BEGIN memory=3g sample=warmup measured=0 ===
+kernel=7.2.0-rc2-swapq-B-g5d5c0f6c4e6e-
+timestamp=2026-08-27T00:03:15+08:00
+[0;32m[INFO][0m  00:03:15 Setting up 8 zram devices (8G each, lzo-rle)
+[0;32m[INFO][0m  00:03:15 Setting up 8 zram devices (8G each, lzo-rle)
+[0;32m[INFO][0m  00:03:15 Swap after zram setup:
+Filename				Type		Size		Used		Priority
+/dev/zram0                              partition	8388604		0		10
+/dev/zram1                              partition	8388604		0		10
+/dev/zram2                              partition	8388604		0		10
+/dev/zram3                              partition	8388604		0		10
+/dev/zram4                              partition	8388604		0		10
+/dev/zram5                              partition	8388604		0		10
+/dev/zram6                              partition	8388604		0		10
+/dev/zram7                              partition	8388604		0		10
+[0;32m[INFO][0m  00:03:15 Active zram devices: 8, unique priorities: 1
+Filename				Type		Size		Used		Priority
+/dev/zram0                              partition	8388604		0		10
+/dev/zram1                              partition	8388604		0		10
+/dev/zram2                              partition	8388604		0		10
+/dev/zram3                              partition	8388604		0		10
+/dev/zram4                              partition	8388604		0		10
+/dev/zram5                              partition	8388604		0		10
+/dev/zram6                              partition	8388604		0		10
+/dev/zram7                              partition	8388604		0		10
+[0;32m[INFO][0m  00:03:15 Starting kernel build (memcg=3g, sample=warmup)...
+build_exit=0
+oom_kill=0
+peak_swap:
+peak_used_kib zram0=1249788 zram1=1248132 zram2=1248312 zram3=1245700 zram4=1254724 zram5=1250452 zram6=1249232 zram7=1245600
+system_time: 	System time (seconds): 52634.98
+elapsed_time: 	Elapsed (wall clock) time (h:mm:ss or m:ss): 10:54.22
+=== SWAPQ_BENCH_SAMPLE_END ===
+[0;32m[INFO][0m  00:14:28 === SAMPLE 01 / 12 ===
+=== SWAPQ_BENCH_SAMPLE_BEGIN memory=3g sample=sample-01 measured=1 ===
+kernel=7.2.0-rc2-swapq-B-g5d5c0f6c4e6e-
+timestamp=2026-08-27T00:14:28+08:00
+[0;32m[INFO][0m  00:14:28 Setting up 8 zram devices (8G each, lzo-rle)
+[0;32m[INFO][0m  00:14:28 Setting up 8 zram devices (8G each, lzo-rle)
+[0;32m[INFO][0m  00:14:28 Swap after zram setup:
+Filename				Type		Size		Used		Priority
+/dev/zram0                              partition	8388604		0		10
+/dev/zram1                              partition	8388604		0		10
+/dev/zram2                              partition	8388604		0		10
+/dev/zram3                              partition	8388604		0		10
+/dev/zram4                              partition	8388604		0		10
+/dev/zram5                              partition	8388604		0		10
+/dev/zram6                              partition	8388604		0		10
+/dev/zram7                              partition	8388604		0		10
+[0;32m[INFO][0m  00:14:28 Active zram devices: 8, unique priorities: 1
+Filename				Type		Size		Used		Priority
+/dev/zram0                              partition	8388604		0		10
+/dev/zram1                              partition	8388604		0		10
+/dev/zram2                              partition	8388604		0		10
+/dev/zram3                              partition	8388604		0		10
+/dev/zram4                              partition	8388604		0		10
+/dev/zram5                              partition	8388604		0		10
+/dev/zram6                              partition	8388604		0		10
+/dev/zram7                              partition	8388604		0		10
+[0;32m[INFO][0m  00:14:28 Starting kernel build (memcg=3g, sample=sample-01)...
+build_exit=0
+oom_kill=0
+peak_swap:
+peak_used_kib zram0=1178548 zram1=1189184 zram2=1186924 zram3=1181308 zram4=1193856 zram5=1185356 zram6=1185564 zram7=1178608
+system_time: 	System time (seconds): 54392.08
+elapsed_time: 	Elapsed (wall clock) time (h:mm:ss or m:ss): 11:08.11
+=== SWAPQ_BENCH_SAMPLE_END ===
+[0;32m[INFO][0m  00:25:54 === SAMPLE 02 / 12 ===
+=== SWAPQ_BENCH_SAMPLE_BEGIN memory=3g sample=sample-02 measured=1 ===
+kernel=7.2.0-rc2-swapq-B-g5d5c0f6c4e6e-
+timestamp=2026-08-27T00:25:54+08:00
+[0;32m[INFO][0m  00:25:54 Setting up 8 zram devices (8G each, lzo-rle)
+[0;32m[INFO][0m  00:25:54 Setting up 8 zram devices (8G each, lzo-rle)
+[0;32m[INFO][0m  00:25:55 Swap after zram setup:
+Filename				Type		Size		Used		Priority
+/dev/zram0                              partition	8388604		0		10
+/dev/zram1                              partition	8388604		0		10
+/dev/zram2                              partition	8388604		0		10
+/dev/zram3                              partition	8388604		0		10
+/dev/zram4                              partition	8388604		0		10
+/dev/zram5                              partition	8388604		0		10
+/dev/zram6                              partition	8388604		0		10
+/dev/zram7                              partition	8388604		0		10
+[0;32m[INFO][0m  00:25:55 Active zram devices: 8, unique priorities: 1
+Filename				Type		Size		Used		Priority
+/dev/zram0                              partition	8388604		0		10
+/dev/zram1                              partition	8388604		0		10
+/dev/zram2                              partition	8388604		0		10
+/dev/zram3                              partition	8388604		0		10
+/dev/zram4                              partition	8388604		0		10
+/dev/zram5                              partition	8388604		0		10
+/dev/zram6                              partition	8388604		0		10
+/dev/zram7                              partition	8388604		0		10
+[0;32m[INFO][0m  00:25:55 Starting kernel build (memcg=3g, sample=sample-02)...
+build_exit=0
+oom_kill=0
+peak_swap:
+peak_used_kib zram0=1501588 zram1=1508820 zram2=1513272 zram3=1514612 zram4=1502468 zram5=1525412 zram6=1506624 zram7=1498636
+system_time: 	System time (seconds): 53805.06
+elapsed_time: 	Elapsed (wall clock) time (h:mm:ss or m:ss): 11:00.45
+=== SWAPQ_BENCH_SAMPLE_END ===
+[0;32m[INFO][0m  00:37:13 === SAMPLE 03 / 12 ===
+=== SWAPQ_BENCH_SAMPLE_BEGIN memory=3g sample=sample-03 measured=1 ===
+kernel=7.2.0-rc2-swapq-B-g5d5c0f6c4e6e-
+timestamp=2026-08-27T00:37:13+08:00
+[0;32m[INFO][0m  00:37:13 Setting up 8 zram devices (8G each, lzo-rle)
+[0;32m[INFO][0m  00:37:13 Setting up 8 zram devices (8G each, lzo-rle)
+[0;32m[INFO][0m  00:37:13 Swap after zram setup:
+Filename				Type		Size		Used		Priority
+/dev/zram0                              partition	8388604		0		10
+/dev/zram1                              partition	8388604		0		10
+/dev/zram2                              partition	8388604		0		10
+/dev/zram3                              partition	8388604		0		10
+/dev/zram4                              partition	8388604		0		10
+/dev/zram5                              partition	8388604		0		10
+/dev/zram6                              partition	8388604		0		10
+/dev/zram7                              partition	8388604		0		10
+[0;32m[INFO][0m  00:37:13 Active zram devices: 8, unique priorities: 1
+Filename				Type		Size		Used		Priority
+/dev/zram0                              partition	8388604		0		10
+/dev/zram1                              partition	8388604		0		10
+/dev/zram2                              partition	8388604		0		10
+/dev/zram3                              partition	8388604		0		10
+/dev/zram4                              partition	8388604		0		10
+/dev/zram5                              partition	8388604		0		10
+/dev/zram6                              partition	8388604		0		10
+/dev/zram7                              partition	8388604		0		10
+[0;32m[INFO][0m  00:37:13 Starting kernel build (memcg=3g, sample=sample-03)...
+build_exit=0
+oom_kill=0
+peak_swap:
+peak_used_kib zram0=1192356 zram1=1193008 zram2=1197124 zram3=1199112 zram4=1192688 zram5=1183260 zram6=1188056 zram7=1179440
+system_time: 	System time (seconds): 54620.58
+elapsed_time: 	Elapsed (wall clock) time (h:mm:ss or m:ss): 11:08.07
+=== SWAPQ_BENCH_SAMPLE_END ===
+[0;32m[INFO][0m  00:48:40 === SAMPLE 04 / 12 ===
+=== SWAPQ_BENCH_SAMPLE_BEGIN memory=3g sample=sample-04 measured=1 ===
+kernel=7.2.0-rc2-swapq-B-g5d5c0f6c4e6e-
+timestamp=2026-08-27T00:48:40+08:00
+[0;32m[INFO][0m  00:48:40 Setting up 8 zram devices (8G each, lzo-rle)
+[0;32m[INFO][0m  00:48:40 Setting up 8 zram devices (8G each, lzo-rle)
+[0;32m[INFO][0m  00:48:40 Swap after zram setup:
+Filename				Type		Size		Used		Priority
+/dev/zram0                              partition	8388604		0		10
+/dev/zram1                              partition	8388604		0		10
+/dev/zram2                              partition	8388604		0		10
+/dev/zram3                              partition	8388604		0		10
+/dev/zram4                              partition	8388604		0		10
+/dev/zram5                              partition	8388604		0		10
+/dev/zram6                              partition	8388604		0		10
+/dev/zram7                              partition	8388604		0		10
+[0;32m[INFO][0m  00:48:40 Active zram devices: 8, unique priorities: 1
+Filename				Type		Size		Used		Priority
+/dev/zram0                              partition	8388604		0		10
+/dev/zram1                              partition	8388604		0		10
+/dev/zram2                              partition	8388604		0		10
+/dev/zram3                              partition	8388604		0		10
+/dev/zram4                              partition	8388604		0		10
+/dev/zram5                              partition	8388604		0		10
+/dev/zram6                              partition	8388604		0		10
+/dev/zram7                              partition	8388604		0		10
+[0;32m[INFO][0m  00:48:40 Starting kernel build (memcg=3g, sample=sample-04)...
+build_exit=0
+oom_kill=0
+peak_swap:
+peak_used_kib zram0=1310612 zram1=1302956 zram2=1302844 zram3=1309568 zram4=1312000 zram5=1297248 zram6=1309324 zram7=1318336
+system_time: 	System time (seconds): 53508.67
+elapsed_time: 	Elapsed (wall clock) time (h:mm:ss or m:ss): 10:59.40
+=== SWAPQ_BENCH_SAMPLE_END ===
+[0;32m[INFO][0m  00:59:58 === SAMPLE 05 / 12 ===
+=== SWAPQ_BENCH_SAMPLE_BEGIN memory=3g sample=sample-05 measured=1 ===
+kernel=7.2.0-rc2-swapq-B-g5d5c0f6c4e6e-
+timestamp=2026-08-27T00:59:58+08:00
+[0;32m[INFO][0m  00:59:58 Setting up 8 zram devices (8G each, lzo-rle)
+[0;32m[INFO][0m  00:59:58 Setting up 8 zram devices (8G each, lzo-rle)
+[0;32m[INFO][0m  00:59:59 Swap after zram setup:
+Filename				Type		Size		Used		Priority
+/dev/zram0                              partition	8388604		0		10
+/dev/zram1                              partition	8388604		0		10
+/dev/zram2                              partition	8388604		0		10
+/dev/zram3                              partition	8388604		0		10
+/dev/zram4                              partition	8388604		0		10
+/dev/zram5                              partition	8388604		0		10
+/dev/zram6                              partition	8388604		0		10
+/dev/zram7                              partition	8388604		0		10
+[0;32m[INFO][0m  00:59:59 Active zram devices: 8, unique priorities: 1
+Filename				Type		Size		Used		Priority
+/dev/zram0                              partition	8388604		0		10
+/dev/zram1                              partition	8388604		0		10
+/dev/zram2                              partition	8388604		0		10
+/dev/zram3                              partition	8388604		0		10
+/dev/zram4                              partition	8388604		0		10
+/dev/zram5                              partition	8388604		0		10
+/dev/zram6                              partition	8388604		0		10
+/dev/zram7                              partition	8388604		0		10
+[0;32m[INFO][0m  00:59:59 Starting kernel build (memcg=3g, sample=sample-05)...
+build_exit=0
+oom_kill=0
+peak_swap:
+peak_used_kib zram0=1185260 zram1=1178460 zram2=1172444 zram3=1183980 zram4=1174648 zram5=1178848 zram6=1174364 zram7=1180960
+system_time: 	System time (seconds): 52350.01
+elapsed_time: 	Elapsed (wall clock) time (h:mm:ss or m:ss): 10:47.54
+=== SWAPQ_BENCH_SAMPLE_END ===
+[0;32m[INFO][0m  01:11:05 === SAMPLE 06 / 12 ===
+=== SWAPQ_BENCH_SAMPLE_BEGIN memory=3g sample=sample-06 measured=1 ===
+kernel=7.2.0-rc2-swapq-B-g5d5c0f6c4e6e-
+timestamp=2026-08-27T01:11:05+08:00
+[0;32m[INFO][0m  01:11:05 Setting up 8 zram devices (8G each, lzo-rle)
+[0;32m[INFO][0m  01:11:05 Setting up 8 zram devices (8G each, lzo-rle)
+[0;32m[INFO][0m  01:11:05 Swap after zram setup:
+Filename				Type		Size		Used		Priority
+/dev/zram0                              partition	8388604		0		10
+/dev/zram1                              partition	8388604		0		10
+/dev/zram2                              partition	8388604		0		10
+/dev/zram3                              partition	8388604		0		10
+/dev/zram4                              partition	8388604		0		10
+/dev/zram5                              partition	8388604		0		10
+/dev/zram6                              partition	8388604		0		10
+/dev/zram7                              partition	8388604		0		10
+[0;32m[INFO][0m  01:11:05 Active zram devices: 8, unique priorities: 1
+Filename				Type		Size		Used		Priority
+/dev/zram0                              partition	8388604		0		10
+/dev/zram1                              partition	8388604		0		10
+/dev/zram2                              partition	8388604		0		10
+/dev/zram3                              partition	8388604		0		10
+/dev/zram4                              partition	8388604		0		10
+/dev/zram5                              partition	8388604		0		10
+/dev/zram6                              partition	8388604		0		10
+/dev/zram7                              partition	8388604		0		10
+[0;32m[INFO][0m  01:11:05 Starting kernel build (memcg=3g, sample=sample-06)...
+build_exit=0
+oom_kill=0
+peak_swap:
+peak_used_kib zram0=1244532 zram1=1248668 zram2=1229748 zram3=1236404 zram4=1230764 zram5=1239436 zram6=1235448 zram7=1238264
+system_time: 	System time (seconds): 53756.09
+elapsed_time: 	Elapsed (wall clock) time (h:mm:ss or m:ss): 11:04.61
+=== SWAPQ_BENCH_SAMPLE_END ===
+[0;32m[INFO][0m  01:22:29 === SAMPLE 07 / 12 ===
+=== SWAPQ_BENCH_SAMPLE_BEGIN memory=3g sample=sample-07 measured=1 ===
+kernel=7.2.0-rc2-swapq-B-g5d5c0f6c4e6e-
+timestamp=2026-08-27T01:22:29+08:00
+[0;32m[INFO][0m  01:22:29 Setting up 8 zram devices (8G each, lzo-rle)
+[0;32m[INFO][0m  01:22:29 Setting up 8 zram devices (8G each, lzo-rle)
+[0;32m[INFO][0m  01:22:29 Swap after zram setup:
+Filename				Type		Size		Used		Priority
+/dev/zram0                              partition	8388604		0		10
+/dev/zram1                              partition	8388604		0		10
+/dev/zram2                              partition	8388604		0		10
+/dev/zram3                              partition	8388604		0		10
+/dev/zram4                              partition	8388604		0		10
+/dev/zram5                              partition	8388604		0		10
+/dev/zram6                              partition	8388604		0		10
+/dev/zram7                              partition	8388604		0		10
+[0;32m[INFO][0m  01:22:29 Active zram devices: 8, unique priorities: 1
+Filename				Type		Size		Used		Priority
+/dev/zram0                              partition	8388604		0		10
+/dev/zram1                              partition	8388604		0		10
+/dev/zram2                              partition	8388604		0		10
+/dev/zram3                              partition	8388604		0		10
+/dev/zram4                              partition	8388604		0		10
+/dev/zram5                              partition	8388604		0		10
+/dev/zram6                              partition	8388604		0		10
+/dev/zram7                              partition	8388604		0		10
+[0;32m[INFO][0m  01:22:29 Starting kernel build (memcg=3g, sample=sample-07)...
+build_exit=0
+oom_kill=0
+peak_swap:
+peak_used_kib zram0=1196112 zram1=1200380 zram2=1198348 zram3=1190612 zram4=1189068 zram5=1193124 zram6=1199244 zram7=1188008
+system_time: 	System time (seconds): 52775.51
+elapsed_time: 	Elapsed (wall clock) time (h:mm:ss or m:ss): 10:48.95
+=== SWAPQ_BENCH_SAMPLE_END ===
+[0;32m[INFO][0m  01:33:38 === SAMPLE 08 / 12 ===
+=== SWAPQ_BENCH_SAMPLE_BEGIN memory=3g sample=sample-08 measured=1 ===
+kernel=7.2.0-rc2-swapq-B-g5d5c0f6c4e6e-
+timestamp=2026-08-27T01:33:38+08:00
+[0;32m[INFO][0m  01:33:38 Setting up 8 zram devices (8G each, lzo-rle)
+[0;32m[INFO][0m  01:33:38 Setting up 8 zram devices (8G each, lzo-rle)
+[0;32m[INFO][0m  01:33:38 Swap after zram setup:
+Filename				Type		Size		Used		Priority
+/dev/zram0                              partition	8388604		0		10
+/dev/zram1                              partition	8388604		0		10
+/dev/zram2                              partition	8388604		0		10
+/dev/zram3                              partition	8388604		0		10
+/dev/zram4                              partition	8388604		0		10
+/dev/zram5                              partition	8388604		0		10
+/dev/zram6                              partition	8388604		0		10
+/dev/zram7                              partition	8388604		0		10
+[0;32m[INFO][0m  01:33:38 Active zram devices: 8, unique priorities: 1
+Filename				Type		Size		Used		Priority
+/dev/zram0                              partition	8388604		0		10
+/dev/zram1                              partition	8388604		0		10
+/dev/zram2                              partition	8388604		0		10
+/dev/zram3                              partition	8388604		0		10
+/dev/zram4                              partition	8388604		0		10
+/dev/zram5                              partition	8388604		0		10
+/dev/zram6                              partition	8388604		0		10
+/dev/zram7                              partition	8388604		0		10
+[0;32m[INFO][0m  01:33:38 Starting kernel build (memcg=3g, sample=sample-08)...
+build_exit=0
+oom_kill=0
+peak_swap:
+peak_used_kib zram0=1301764 zram1=1302828 zram2=1302248 zram3=1304408 zram4=1310080 zram5=1300824 zram6=1296360 zram7=1310608
+system_time: 	System time (seconds): 53550.16
+elapsed_time: 	Elapsed (wall clock) time (h:mm:ss or m:ss): 10:58.11
+=== SWAPQ_BENCH_SAMPLE_END ===
+[0;32m[INFO][0m  01:44:55 === SAMPLE 09 / 12 ===
+=== SWAPQ_BENCH_SAMPLE_BEGIN memory=3g sample=sample-09 measured=1 ===
+kernel=7.2.0-rc2-swapq-B-g5d5c0f6c4e6e-
+timestamp=2026-08-27T01:44:55+08:00
+[0;32m[INFO][0m  01:44:55 Setting up 8 zram devices (8G each, lzo-rle)
+[0;32m[INFO][0m  01:44:55 Setting up 8 zram devices (8G each, lzo-rle)
+[0;32m[INFO][0m  01:44:55 Swap after zram setup:
+Filename				Type		Size		Used		Priority
+/dev/zram0                              partition	8388604		0		10
+/dev/zram1                              partition	8388604		0		10
+/dev/zram2                              partition	8388604		0		10
+/dev/zram3                              partition	8388604		0		10
+/dev/zram4                              partition	8388604		0		10
+/dev/zram5                              partition	8388604		0		10
+/dev/zram6                              partition	8388604		0		10
+/dev/zram7                              partition	8388604		0		10
+[0;32m[INFO][0m  01:44:55 Active zram devices: 8, unique priorities: 1
+Filename				Type		Size		Used		Priority
+/dev/zram0                              partition	8388604		0		10
+/dev/zram1                              partition	8388604		0		10
+/dev/zram2                              partition	8388604		0		10
+/dev/zram3                              partition	8388604		0		10
+/dev/zram4                              partition	8388604		0		10
+/dev/zram5                              partition	8388604		0		10
+/dev/zram6                              partition	8388604		0		10
+/dev/zram7                              partition	8388604		0		10
+[0;32m[INFO][0m  01:44:55 Starting kernel build (memcg=3g, sample=sample-09)...
+build_exit=0
+oom_kill=0
+peak_swap:
+peak_used_kib zram0=1252744 zram1=1251504 zram2=1247464 zram3=1254852 zram4=1245872 zram5=1241828 zram6=1241356 zram7=1253640
+system_time: 	System time (seconds): 52377.08
+elapsed_time: 	Elapsed (wall clock) time (h:mm:ss or m:ss): 10:47.30
+=== SWAPQ_BENCH_SAMPLE_END ===
+[0;32m[INFO][0m  01:56:02 === SAMPLE 10 / 12 ===
+=== SWAPQ_BENCH_SAMPLE_BEGIN memory=3g sample=sample-10 measured=1 ===
+kernel=7.2.0-rc2-swapq-B-g5d5c0f6c4e6e-
+timestamp=2026-08-27T01:56:02+08:00
+[0;32m[INFO][0m  01:56:02 Setting up 8 zram devices (8G each, lzo-rle)
+[0;32m[INFO][0m  01:56:02 Setting up 8 zram devices (8G each, lzo-rle)
+[0;32m[INFO][0m  01:56:02 Swap after zram setup:
+Filename				Type		Size		Used		Priority
+/dev/zram0                              partition	8388604		0		10
+/dev/zram1                              partition	8388604		0		10
+/dev/zram2                              partition	8388604		0		10
+/dev/zram3                              partition	8388604		0		10
+/dev/zram4                              partition	8388604		0		10
+/dev/zram5                              partition	8388604		0		10
+/dev/zram6                              partition	8388604		0		10
+/dev/zram7                              partition	8388604		0		10
+[0;32m[INFO][0m  01:56:02 Active zram devices: 8, unique priorities: 1
+Filename				Type		Size		Used		Priority
+/dev/zram0                              partition	8388604		0		10
+/dev/zram1                              partition	8388604		0		10
+/dev/zram2                              partition	8388604		0		10
+/dev/zram3                              partition	8388604		0		10
+/dev/zram4                              partition	8388604		0		10
+/dev/zram5                              partition	8388604		0		10
+/dev/zram6                              partition	8388604		0		10
+/dev/zram7                              partition	8388604		0		10
+[0;32m[INFO][0m  01:56:02 Starting kernel build (memcg=3g, sample=sample-10)...
+build_exit=0
+oom_kill=0
+peak_swap:
+peak_used_kib zram0=1164024 zram1=1156172 zram2=1151520 zram3=1169200 zram4=1150400 zram5=1165352 zram6=1170076 zram7=1148900
+system_time: 	System time (seconds): 52577.99
+elapsed_time: 	Elapsed (wall clock) time (h:mm:ss or m:ss): 10:49.09
+=== SWAPQ_BENCH_SAMPLE_END ===
+[0;32m[INFO][0m  02:07:12 === SAMPLE 11 / 12 ===
+=== SWAPQ_BENCH_SAMPLE_BEGIN memory=3g sample=sample-11 measured=1 ===
+kernel=7.2.0-rc2-swapq-B-g5d5c0f6c4e6e-
+timestamp=2026-08-27T02:07:12+08:00
+[0;32m[INFO][0m  02:07:12 Setting up 8 zram devices (8G each, lzo-rle)
+[0;32m[INFO][0m  02:07:12 Setting up 8 zram devices (8G each, lzo-rle)
+[0;32m[INFO][0m  02:07:12 Swap after zram setup:
+Filename				Type		Size		Used		Priority
+/dev/zram0                              partition	8388604		0		10
+/dev/zram1                              partition	8388604		0		10
+/dev/zram2                              partition	8388604		0		10
+/dev/zram3                              partition	8388604		0		10
+/dev/zram4                              partition	8388604		0		10
+/dev/zram5                              partition	8388604		0		10
+/dev/zram6                              partition	8388604		0		10
+/dev/zram7                              partition	8388604		0		10
+[0;32m[INFO][0m  02:07:12 Active zram devices: 8, unique priorities: 1
+Filename				Type		Size		Used		Priority
+/dev/zram0                              partition	8388604		0		10
+/dev/zram1                              partition	8388604		0		10
+/dev/zram2                              partition	8388604		0		10
+/dev/zram3                              partition	8388604		0		10
+/dev/zram4                              partition	8388604		0		10
+/dev/zram5                              partition	8388604		0		10
+/dev/zram6                              partition	8388604		0		10
+/dev/zram7                              partition	8388604		0		10
+[0;32m[INFO][0m  02:07:13 Starting kernel build (memcg=3g, sample=sample-11)...
+build_exit=0
+oom_kill=0
+peak_swap:
+peak_used_kib zram0=1330984 zram1=1334488 zram2=1333464 zram3=1339364 zram4=1337336 zram5=1343624 zram6=1327960 zram7=1335476
+system_time: 	System time (seconds): 52672.29
+elapsed_time: 	Elapsed (wall clock) time (h:mm:ss or m:ss): 10:51.48
+=== SWAPQ_BENCH_SAMPLE_END ===
+[0;32m[INFO][0m  02:18:24 === SAMPLE 12 / 12 ===
+=== SWAPQ_BENCH_SAMPLE_BEGIN memory=3g sample=sample-12 measured=1 ===
+kernel=7.2.0-rc2-swapq-B-g5d5c0f6c4e6e-
+timestamp=2026-08-27T02:18:24+08:00
+[0;32m[INFO][0m  02:18:24 Setting up 8 zram devices (8G each, lzo-rle)
+[0;32m[INFO][0m  02:18:24 Setting up 8 zram devices (8G each, lzo-rle)
+[0;32m[INFO][0m  02:18:24 Swap after zram setup:
+Filename				Type		Size		Used		Priority
+/dev/zram0                              partition	8388604		0		10
+/dev/zram1                              partition	8388604		0		10
+/dev/zram2                              partition	8388604		0		10
+/dev/zram3                              partition	8388604		0		10
+/dev/zram4                              partition	8388604		0		10
+/dev/zram5                              partition	8388604		0		10
+/dev/zram6                              partition	8388604		0		10
+/dev/zram7                              partition	8388604		0		10
+[0;32m[INFO][0m  02:18:24 Active zram devices: 8, unique priorities: 1
+Filename				Type		Size		Used		Priority
+/dev/zram0                              partition	8388604		0		10
+/dev/zram1                              partition	8388604		0		10
+/dev/zram2                              partition	8388604		0		10
+/dev/zram3                              partition	8388604		0		10
+/dev/zram4                              partition	8388604		0		10
+/dev/zram5                              partition	8388604		0		10
+/dev/zram6                              partition	8388604		0		10
+/dev/zram7                              partition	8388604		0		10
+[0;32m[INFO][0m  02:18:24 Starting kernel build (memcg=3g, sample=sample-12)...
+build_exit=0
+oom_kill=0
+peak_swap:
+peak_used_kib zram0=1209560 zram1=1208548 zram2=1222716 zram3=1211812 zram4=1208716 zram5=1220144 zram6=1213544 zram7=1208244
+system_time: 	System time (seconds): 52550.92
+elapsed_time: 	Elapsed (wall clock) time (h:mm:ss or m:ss): 10:48.51
+=== SWAPQ_BENCH_SAMPLE_END ===
+[0;32m[INFO][0m  02:29:32 ==========================================
+[0;32m[INFO][0m  02:29:32 Benchmark 3g complete!
+[0;32m[INFO][0m  02:29:32 Results: /home/chentao/swapq-v2-test/results/arm-B/bench-3g-20260827-000315
+[0;32m[INFO][0m  02:29:32 
+[0;32m[INFO][0m  02:29:32 Extract times:
+[0;32m[INFO][0m  02:29:32   grep -r 'elapsed_time\|system_time' /home/chentao/swapq-v2-test/results/arm-B/bench-3g-20260827-000315/*/time.txt
+[0;32m[INFO][0m  02:29:32 ==========================================

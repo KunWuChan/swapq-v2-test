@@ -1,0 +1,9 @@
+sample=sample-11
+measured=1
+build_exit=0
+oom_kill=0
+pswpout_delta=473822128
+dmesg_bad=0
+peak_used_kib=N/A
+	System time (seconds): 90371.98
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 17:25.09

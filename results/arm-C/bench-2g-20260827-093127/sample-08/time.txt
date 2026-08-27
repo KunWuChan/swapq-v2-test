@@ -1,0 +1,23 @@
+	Command being timed: "make -C /tmp/swapq-build-src-C-2g-sample-08 -j96 defconfig Image modules"
+	User time (seconds): 7025.07
+	System time (seconds): 39978.27
+	Percent of CPU this job got: 8982%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 8:43.26
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 778816
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 287771313
+	Minor (reclaiming a frame) page faults: 310223905
+	Voluntary context switches: 772858
+	Involuntary context switches: 12414086
+	Swaps: 0
+	File system inputs: 2389923304
+	File system outputs: 6144
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0

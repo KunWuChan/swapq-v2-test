@@ -1,0 +1,9 @@
+sample=sample-04
+measured=1
+build_exit=0
+oom_kill=0
+pswpout_delta=459092306
+dmesg_bad=0
+peak_used_kib zram0=1367620 zram1=1339612 zram2=1338664 zram3=1364396 zram4=1326344 zram5=1336780 zram6=1338316 zram7=1363748
+	System time (seconds): 39497.16
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 8:37.50
